@@ -1,13 +1,29 @@
 import json
 import re
 import base64
+import requests
 from bson import ObjectId
+from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from gridfs import GridFS
 from .db import get_db
 from .auth_utils import hash_password, check_password, create_token, login_required
+
+# ---------- Gemini setup ----------
+
+GEMINI_API_URL = (
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
+    f'?key={settings.GEMINI_API_KEY}'
+)
+
+SYSTEM_PROMPT = (
+    "You are CareAI, a helpful and friendly health assistant for the CareMe app. "
+    "You help users with their medications, appointments, lab results, and general health questions. "
+    "Be concise, caring, and accurate. If you are unsure about medical advice, recommend consulting a doctor. "
+    "Do not diagnose conditions. Keep responses short and helpful."
+)
 
 # ---------- helpers ----------
 
@@ -350,3 +366,67 @@ def delete_account(request):
     db.users.delete_one({'_id': ObjectId(user_id)})
 
     return JsonResponse({'message': 'Account deleted'})
+
+
+# ---------- Chatbot ----------
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def chat(request):
+    data = _parse_body(request)
+    user_message = (data.get('message') or '').strip()
+
+    if not user_message:
+        return JsonResponse({'error': 'Message is required'}, status=400)
+
+    history = data.get('history', [])
+
+    db = get_db()
+
+    # Fetch user context for personalized responses
+    meds = list(db.medications.find({'user_id': request.user_id}))
+    labs = list(db.lab_tests.find({'user_id': request.user_id}))
+    user = db.users.find_one({'_id': ObjectId(request.user_id)})
+
+    context_parts = [SYSTEM_PROMPT]
+
+    if user:
+        context_parts.append(f"\nUser name: {user.get('name', 'Unknown')}")
+
+    if meds:
+        med_list = ', '.join(f"{m.get('name', '')} ({m.get('dosage', '')})" for m in meds)
+        context_parts.append(f"\nUser's current medications: {med_list}")
+
+    if labs:
+        lab_list = ', '.join(f"{l.get('name', '')} on {l.get('date', '')}" for l in labs)
+        context_parts.append(f"\nUser's recent lab tests: {lab_list}")
+
+    system_context = ''.join(context_parts)
+
+    # Build conversation contents for Gemini REST API
+    contents = [
+        {'role': 'user', 'parts': [{'text': system_context + '\n\nPlease acknowledge you understand your role.'}]},
+        {'role': 'model', 'parts': [{'text': "Understood! I'm CareAI, ready to help with your health needs."}]},
+    ]
+
+    for msg in history:
+        role = 'user' if msg.get('isUser') else 'model'
+        contents.append({'role': role, 'parts': [{'text': msg.get('text', '')}]})
+
+    contents.append({'role': 'user', 'parts': [{'text': user_message}]})
+
+    try:
+        resp = requests.post(GEMINI_API_URL, json={'contents': contents}, timeout=30)
+        resp_data = resp.json()
+        reply = resp_data['candidates'][0]['content']['parts'][0]['text']
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Gemini API error: {e}")
+        if 'resp' in locals():
+            print(f"Response status: {resp.status_code}")
+            print(f"Response body: {resp.text[:500]}")
+        reply = "I'm sorry, I'm having trouble connecting right now. Please try again in a moment."
+
+    return JsonResponse({'reply': reply})

@@ -41,6 +41,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 STATIC_URL = '/static/'
 
+# Google Gemini API
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+
 TEMPLATES = [{
     'BACKEND': 'django.template.backends.django.DjangoTemplates',
     'DIRS': [],

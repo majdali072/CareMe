@@ -11,4 +11,5 @@ urlpatterns = [
     path('lab-tests/<str:lab_id>/', views.lab_test_detail),
     path('lab-tests/<str:lab_id>/file/', views.lab_test_file),
     path('users/delete/', views.delete_account),
+    path('chat/', views.chat),
 ]

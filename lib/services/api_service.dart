@@ -235,6 +235,22 @@ class ApiService {
     }
   }
 
+  // ---------- Chat ----------
+
+  static Future<String> sendChatMessage(String message, List<Map<String, dynamic>> history) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/chat/'),
+      headers: _headers,
+      body: jsonEncode({'message': message, 'history': history}),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return data['reply'];
+    }
+    throw ApiException(data['error'] ?? 'Failed to get response');
+  }
+
   // ---------- Account ----------
 
   static Future<void> deleteAccount() async {

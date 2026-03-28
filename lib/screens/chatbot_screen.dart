@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/app_models.dart';
+import '../services/api_service.dart';
 
 class ChatbotScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -31,24 +32,15 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     'Set a reminder',
   ];
 
-  String _getBotResponse(String input) {
-    final lower = input.toLowerCase();
-    if (lower.contains('medication') || lower.contains('medicine')) {
-      return "I can help you with your medications. You're currently taking Aspirin (100mg), Metformin (500mg), Lisinopril (10mg), and Atorvastatin (20mg). Would you like to know more about any specific medication?";
-    } else if (lower.contains('appointment') || lower.contains('schedule')) {
-      return "Your next appointment is with Dr. Sarah Johnson on November 15, 2025 at 2:30 PM for a Follow-up Visit at Heart Care Clinic.";
-    } else if (lower.contains('lab test') || lower.contains('test results')) {
-      return "Your latest lab test was a Complete Blood Count (CBC) on November 5, 2025. All results are within normal range. Your lipid panel from October 20 shows slightly elevated cholesterol.";
-    } else if (lower.contains('reminder')) {
-      return "Your next medication reminders for today are: Aspirin at 8:00 AM, Metformin at 8:30 AM, and Lisinopril at 8:00 PM.";
-    } else if (lower.contains('help')) {
-      return "I can assist you with:\n• Viewing and managing medications\n• Scheduling appointments\n• Checking lab results\n• Setting reminders\n• Answering health questions\n• Providing wellness tips\n\nWhat would you like help with?";
-    } else {
-      return "I'm here to help with your healthcare needs. You can ask me about your medications, appointments, lab tests, or set reminders.";
-    }
+  List<Map<String, dynamic>> _buildHistory() {
+    // Send previous messages (skip the initial greeting) as context
+    return _messages.skip(1).map((m) => {
+      'text': m.text,
+      'isUser': m.isUser,
+    }).toList();
   }
 
-  void _sendMessage([String? text]) {
+  void _sendMessage([String? text]) async {
     final content = text ?? _inputCtrl.text.trim();
     if (content.isEmpty) return;
     _inputCtrl.clear();
@@ -60,15 +52,28 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
     _scrollToBottom();
 
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    try {
+      final reply = await ApiService.sendChatMessage(content, _buildHistory());
       if (!mounted) return;
-      final botMsg = ChatMessage(id: _nextId++, text: _getBotResponse(content), isUser: false, timestamp: DateTime.now());
+      final botMsg = ChatMessage(id: _nextId++, text: reply, isUser: false, timestamp: DateTime.now());
       setState(() {
         _messages.add(botMsg);
         _isTyping = false;
       });
-      _scrollToBottom();
-    });
+    } catch (e) {
+      if (!mounted) return;
+      final errorMsg = ChatMessage(
+        id: _nextId++,
+        text: "I'm sorry, I couldn't connect to the server. Please check your connection and try again.",
+        isUser: false,
+        timestamp: DateTime.now(),
+      );
+      setState(() {
+        _messages.add(errorMsg);
+        _isTyping = false;
+      });
+    }
+    _scrollToBottom();
   }
 
   void _scrollToBottom() {
