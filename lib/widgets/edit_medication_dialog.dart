@@ -61,7 +61,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                     const SizedBox(height: 12),
                     _field('Frequency', _freqCtrl),
                     const SizedBox(height: 12),
-                    _field('Time', _timeCtrl),
+                    _timePickerField('Time', _timeCtrl),
                     const SizedBox(height: 12),
                     _field('Purpose', _purposeCtrl),
                     const SizedBox(height: 12),
@@ -97,6 +97,37 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _timePickerField(String label, TextEditingController ctrl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          readOnly: true,
+          onTap: () async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: TimeOfDay.now(),
+            );
+            if (picked != null) {
+              ctrl.text = picked.format(context);
+            }
+          },
+          decoration: InputDecoration(
+            hintText: 'Tap to select time',
+            suffixIcon: const Icon(Icons.access_time, size: 18, color: Color(0xFF6B7280)),
+            filled: true, fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          ),
+        ),
+      ],
     );
   }
 

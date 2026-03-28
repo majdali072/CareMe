@@ -110,7 +110,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    _field('Time', _timeCtrl, 'e.g., 8:00 AM'),
+                    _timePickerField('Time', _timeCtrl),
                     const SizedBox(height: 14),
                     if (_alertType == 'success')
                       _alert(true, 'Medication added successfully!', []),
@@ -150,6 +150,37 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
           controller: ctrl,
           decoration: InputDecoration(
             hintText: hint,
+            filled: true, fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _timePickerField(String label, TextEditingController ctrl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          readOnly: true,
+          onTap: () async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: TimeOfDay.now(),
+            );
+            if (picked != null) {
+              ctrl.text = picked.format(context);
+            }
+          },
+          decoration: InputDecoration(
+            hintText: 'Tap to select time',
+            suffixIcon: const Icon(Icons.access_time, size: 18, color: Color(0xFF6B7280)),
             filled: true, fillColor: const Color(0xFFF9FAFB),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),

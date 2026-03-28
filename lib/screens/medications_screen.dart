@@ -1,5 +1,9 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/app_models.dart';
+import '../services/api_service.dart';
 import '../widgets/edit_medication_dialog.dart';
 
 class MedicationsScreen extends StatefulWidget {
@@ -25,6 +29,45 @@ class MedicationsScreen extends StatefulWidget {
 class _MedicationsScreenState extends State<MedicationsScreen> {
   int? _expandedMed;
   int? _expandedLab;
+
+  Future<void> _downloadFile(LabTest lab) async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Downloading...')),
+      );
+      final bytes = await ApiService.downloadLabTestFile(lab.id!);
+
+      if (kIsWeb) {
+        // Web: trigger browser download
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File download not supported on web')),
+        );
+        return;
+      }
+
+      // Desktop/mobile: let user pick save location
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save ${lab.fileName}',
+        fileName: lab.fileName,
+      );
+
+      if (savePath != null) {
+        final file = File(savePath);
+        await file.writeAsBytes(bytes);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Saved to $savePath')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -219,18 +262,34 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                 const SizedBox(height: 14),
                 _expandedText('Ordered by', lab.doctor),
                 const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(12)),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.description_outlined, color: Color(0xFF1D4ED8), size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(lab.fileName, style: const TextStyle(color: Color(0xFF1E3A5F), fontSize: 13))),
-                      const Icon(Icons.download_outlined, color: Color(0xFF1D4ED8), size: 18),
-                    ],
+                if (lab.hasFile)
+                  GestureDetector(
+                    onTap: () => _downloadFile(lab),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(12)),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.description_outlined, color: Color(0xFF1D4ED8), size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(lab.fileName, style: const TextStyle(color: Color(0xFF1E3A5F), fontSize: 13))),
+                          const Icon(Icons.download_outlined, color: Color(0xFF1D4ED8), size: 18),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: const Color(0xFFF9FAFB), borderRadius: BorderRadius.circular(12)),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.description_outlined, color: Color(0xFF9CA3AF), size: 18),
+                        SizedBox(width: 8),
+                        Text('No file uploaded', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ],
           ),

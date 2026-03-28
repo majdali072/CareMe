@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/app_models.dart';
 
 class AddScheduleDialog extends StatefulWidget {
@@ -68,9 +69,9 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                     const SizedBox(height: 14),
                     _field('Location', _locationCtrl, 'Medical center or clinic'),
                     const SizedBox(height: 14),
-                    _field('Date', _dateCtrl, 'e.g., 2025-11-15'),
+                    _datePickerField('Date', _dateCtrl),
                     const SizedBox(height: 14),
-                    _field('Time', _timeCtrl, 'e.g., 2:30 PM'),
+                    _timePickerField('Time', _timeCtrl),
                     const SizedBox(height: 14),
                     if (_alertType == 'success')
                       _alert(true, 'Appointment added successfully!'),
@@ -110,6 +111,70 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
           controller: ctrl,
           decoration: InputDecoration(
             hintText: hint, filled: true, fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _datePickerField(String label, TextEditingController ctrl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          readOnly: true,
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: DateTime.now(),
+              firstDate: DateTime.now(),
+              lastDate: DateTime.now().add(const Duration(days: 365)),
+            );
+            if (picked != null) {
+              ctrl.text = DateFormat('yyyy-MM-dd').format(picked);
+            }
+          },
+          decoration: InputDecoration(
+            hintText: 'Tap to select date',
+            suffixIcon: const Icon(Icons.calendar_today, size: 18, color: Color(0xFF6B7280)),
+            filled: true, fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _timePickerField(String label, TextEditingController ctrl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          readOnly: true,
+          onTap: () async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: TimeOfDay.now(),
+            );
+            if (picked != null) {
+              ctrl.text = picked.format(context);
+            }
+          },
+          decoration: InputDecoration(
+            hintText: 'Tap to select time',
+            suffixIcon: const Icon(Icons.access_time, size: 18, color: Color(0xFF6B7280)),
+            filled: true, fillColor: const Color(0xFFF9FAFB),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),

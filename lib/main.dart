@@ -14,6 +14,7 @@ import 'widgets/add_medication_dialog.dart';
 import 'widgets/add_lab_test_dialog.dart';
 import 'widgets/add_schedule_dialog.dart';
 import 'models/app_models.dart';
+import 'services/api_service.dart';
 
 void main() {
   runApp(const CareMeApp());
@@ -49,25 +50,9 @@ class _AppRootState extends State<AppRoot> {
   bool _isAdmin = false;
   String _currentPage = 'home';
 
-  List<Medication> _medications = [
-    Medication(name: 'Aspirin', dosage: '100mg', frequency: 'Once daily', time: '8:00 AM', purpose: 'Blood thinner to prevent heart attacks', sideEffects: 'Stomach upset, bleeding'),
-    Medication(name: 'Metformin', dosage: '500mg', frequency: 'Twice daily', time: '8:30 AM, 8:30 PM', purpose: 'Control blood sugar in type 2 diabetes', sideEffects: 'Nausea, diarrhea'),
-    Medication(name: 'Lisinopril', dosage: '10mg', frequency: 'Once daily', time: '8:00 PM', purpose: 'Treat high blood pressure', sideEffects: 'Dry cough, dizziness'),
-    Medication(name: 'Atorvastatin', dosage: '20mg', frequency: 'Once daily', time: '9:00 PM', purpose: 'Lower cholesterol levels', sideEffects: 'Muscle pain, fatigue'),
-  ];
-
-  List<LabTest> _labTests = [
-    LabTest(name: 'Complete Blood Count (CBC)', date: 'November 5, 2025', doctor: 'Dr. Sarah Johnson', fileName: 'CBC_Results_Nov2025.pdf'),
-    LabTest(name: 'Lipid Panel', date: 'October 20, 2025', doctor: 'Dr. Sarah Johnson', fileName: 'Lipid_Panel_Oct2025.pdf'),
-    LabTest(name: 'HbA1c', date: 'October 15, 2025', doctor: 'Dr. Michael Chen', fileName: 'HbA1c_Oct2025.pdf'),
-  ];
-
-  List<Appointment> _appointments = [
-    Appointment(date: 10, title: 'Dr. Sarah Johnson', time: '10:00 AM', type: 'Cardiology Checkup', location: 'Heart Care Clinic'),
-    Appointment(date: 15, title: 'Dr. Sarah Johnson', time: '2:30 PM', type: 'Follow-up Visit', location: 'Heart Care Clinic'),
-    Appointment(date: 22, title: 'Lab Test', time: '9:00 AM', type: 'Blood Work', location: 'City Medical Lab'),
-    Appointment(date: 28, title: 'Dr. Michael Chen', time: '3:00 PM', type: 'Diabetes Management', location: 'Wellness Center'),
-  ];
+  List<Medication> _medications = [];
+  List<LabTest> _labTests = [];
+  List<Appointment> _appointments = [];
 
   void _handleLogin(String name, String email) {
     setState(() {
@@ -76,14 +61,32 @@ class _AppRootState extends State<AppRoot> {
       _currentPage = _isAdmin ? 'controller' : 'home';
       _isLoggedIn = true;
     });
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final meds = await ApiService.getMedications();
+      final labs = await ApiService.getLabTests();
+      setState(() {
+        _medications = meds;
+        _labTests = labs;
+      });
+    } catch (e) {
+      // Data will just be empty if server is unreachable
+    }
   }
 
   void _handleLogout() {
+    ApiService.logout();
     setState(() {
       _isLoggedIn = false;
       _userName = '';
       _isAdmin = false;
       _currentPage = 'home';
+      _medications = [];
+      _labTests = [];
+      _appointments = [];
     });
   }
 
@@ -94,7 +97,18 @@ class _AppRootState extends State<AppRoot> {
       context: context,
       builder: (_) => AddMedicationDialog(
         currentMedications: _medications.map((m) => m.name).toList(),
-        onAdd: (med) => setState(() => _medications.add(med)),
+        onAdd: (med) async {
+          try {
+            final saved = await ApiService.addMedication(med);
+            setState(() => _medications.add(saved));
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to add: $e')),
+              );
+            }
+          }
+        },
       ),
     );
   }
@@ -103,7 +117,18 @@ class _AppRootState extends State<AppRoot> {
     showDialog(
       context: context,
       builder: (_) => AddLabTestDialog(
-        onAdd: (lab) => setState(() => _labTests.add(lab)),
+        onAdd: (lab, {fileBytes, pickedFileName}) async {
+          try {
+            final saved = await ApiService.addLabTest(lab, fileBytes: fileBytes, pickedFileName: pickedFileName);
+            setState(() => _labTests.add(saved));
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to add: $e')),
+              );
+            }
+          }
+        },
       ),
     );
   }
@@ -117,12 +142,66 @@ class _AppRootState extends State<AppRoot> {
     );
   }
 
+  void _handleMedicationsChanged(List<Medication> updated) async {
+    // Find which medication was removed
+    final removedMeds = _medications.where(
+      (m) => m.id != null && !updated.any((u) => u.id == m.id),
+    );
+
+    for (final med in removedMeds) {
+      try {
+        await ApiService.deleteMedication(med.id!);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Find which medication was updated (edited)
+    for (int i = 0; i < updated.length; i++) {
+      final u = updated[i];
+      if (u.id != null && i < _medications.length && _medications[i].id == u.id) {
+        // Check if content changed
+        final orig = _medications[i];
+        if (orig.name != u.name ||
+            orig.dosage != u.dosage ||
+            orig.frequency != u.frequency ||
+            orig.time != u.time ||
+            orig.purpose != u.purpose ||
+            orig.sideEffects != u.sideEffects) {
+          try {
+            await ApiService.updateMedication(u.id!, u);
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+    }
+
+    setState(() => _medications = updated);
+  }
+
+  void _handleLabTestsChanged(List<LabTest> updated) async {
+    final removedLabs = _labTests.where(
+      (l) => l.id != null && !updated.any((u) => u.id == l.id),
+    );
+
+    for (final lab in removedLabs) {
+      try {
+        await ApiService.deleteLabTest(lab.id!);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    setState(() => _labTests = updated);
+  }
+
   Widget _buildPage() {
     switch (_currentPage) {
       case 'home':
         return HomeScreen(userName: _userName, onNavigate: _navigate, medications: _medications, appointments: _appointments, labTests: _labTests);
       case 'medications':
-        return MedicationsScreen(onBack: () => _navigate('home'), medications: _medications, labTests: _labTests, onMedicationsChanged: (m) => setState(() => _medications = m), onLabTestsChanged: (l) => setState(() => _labTests = l));
+        return MedicationsScreen(onBack: () => _navigate('home'), medications: _medications, labTests: _labTests, onMedicationsChanged: _handleMedicationsChanged, onLabTestsChanged: _handleLabTestsChanged);
       case 'calendar':
         return CalendarScreen(onBack: () => _navigate('home'), appointments: _appointments, onAppointmentsChanged: (a) => setState(() => _appointments = a));
       case 'chatbot':
@@ -152,7 +231,7 @@ class _AppRootState extends State<AppRoot> {
 
     return Scaffold(
       body: Stack(children: [
-        _buildPage(),
+        Positioned.fill(child: _buildPage()),
         Positioned(
           bottom: 0, left: 0, right: 0,
           child: BottomNav(currentPage: _currentPage, onNavigate: _navigate),

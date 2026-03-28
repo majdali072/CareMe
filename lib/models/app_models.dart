@@ -1,4 +1,5 @@
 class Medication {
+  final String? id;
   final String name;
   final String dosage;
   final String frequency;
@@ -7,6 +8,7 @@ class Medication {
   final String sideEffects;
 
   Medication({
+    this.id,
     required this.name,
     required this.dosage,
     required this.frequency,
@@ -15,7 +17,29 @@ class Medication {
     required this.sideEffects,
   });
 
+  factory Medication.fromJson(Map<String, dynamic> json) {
+    return Medication(
+      id: json['id'],
+      name: json['name'] ?? '',
+      dosage: json['dosage'] ?? '',
+      frequency: json['frequency'] ?? '',
+      time: json['time'] ?? '',
+      purpose: json['purpose'] ?? '',
+      sideEffects: json['sideEffects'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'dosage': dosage,
+        'frequency': frequency,
+        'time': time,
+        'purpose': purpose,
+        'sideEffects': sideEffects,
+      };
+
   Medication copyWith({
+    String? id,
     String? name,
     String? dosage,
     String? frequency,
@@ -24,6 +48,7 @@ class Medication {
     String? sideEffects,
   }) {
     return Medication(
+      id: id ?? this.id,
       name: name ?? this.name,
       dosage: dosage ?? this.dosage,
       frequency: frequency ?? this.frequency,
@@ -35,17 +60,41 @@ class Medication {
 }
 
 class LabTest {
+  final String? id;
   final String name;
   final String date;
   final String doctor;
   final String fileName;
+  final String fileId;
 
   LabTest({
+    this.id,
     required this.name,
     required this.date,
     required this.doctor,
     required this.fileName,
+    this.fileId = '',
   });
+
+  bool get hasFile => fileId.isNotEmpty;
+
+  factory LabTest.fromJson(Map<String, dynamic> json) {
+    return LabTest(
+      id: json['id'],
+      name: json['name'] ?? '',
+      date: json['date'] ?? '',
+      doctor: json['doctor'] ?? '',
+      fileName: json['fileName'] ?? '',
+      fileId: json['fileId'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'date': date,
+        'doctor': doctor,
+        'fileName': fileName,
+      };
 }
 
 class Appointment {

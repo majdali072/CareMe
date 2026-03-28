@@ -1,8 +1,11 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/app_models.dart';
 
 class AddLabTestDialog extends StatefulWidget {
-  final void Function(LabTest) onAdd;
+  final void Function(LabTest, {Uint8List? fileBytes, String? pickedFileName}) onAdd;
   const AddLabTestDialog({super.key, required this.onAdd});
 
   @override
@@ -15,9 +18,31 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
   final _doctorCtrl = TextEditingController();
   bool _showSuccess = false;
 
+  String? _pickedFileName;
+  Uint8List? _pickedFileBytes;
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'],
+      withData: true,
+    );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        _pickedFileName = result.files.first.name;
+        _pickedFileBytes = result.files.first.bytes;
+      });
+    }
+  }
+
   void _submit() {
     if (_nameCtrl.text.isEmpty || _dateCtrl.text.isEmpty || _doctorCtrl.text.isEmpty) return;
-    widget.onAdd(LabTest(name: _nameCtrl.text, date: _dateCtrl.text, doctor: _doctorCtrl.text, fileName: '${_nameCtrl.text.replaceAll(' ', '_')}.pdf'));
+    final fileName = _pickedFileName ?? '${_nameCtrl.text.replaceAll(' ', '_')}.pdf';
+    widget.onAdd(
+      LabTest(name: _nameCtrl.text, date: _dateCtrl.text, doctor: _doctorCtrl.text, fileName: fileName),
+      fileBytes: _pickedFileBytes,
+      pickedFileName: _pickedFileName,
+    );
     setState(() => _showSuccess = true);
     Future.delayed(const Duration(milliseconds: 1500), () { if (mounted) Navigator.pop(context); });
   }
@@ -47,31 +72,48 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                 children: [
                   _field('Test Name', _nameCtrl, 'e.g., Complete Blood Count'),
                   const SizedBox(height: 14),
-                  _field('Test Date', _dateCtrl, 'e.g., November 5, 2025'),
+                  _datePickerField('Test Date', _dateCtrl),
                   const SizedBox(height: 14),
                   _field('Ordered By', _doctorCtrl, "Doctor's name"),
                   const SizedBox(height: 14),
-                  // File upload placeholder
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Upload Results (Optional)', style: TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
                       const SizedBox(height: 6),
                       GestureDetector(
-                        onTap: () {},
+                        onTap: _pickFile,
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF9FAFB),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                            border: Border.all(color: _pickedFileName != null ? const Color(0xFF2563EB) : const Color(0xFFE5E7EB)),
                             borderRadius: BorderRadius.circular(14),
                           ),
-                          child: const Row(
+                          child: Row(
                             children: [
-                              Icon(Icons.upload_file, color: Color(0xFF1976D2), size: 20),
-                              SizedBox(width: 8),
-                              Text('Choose file', style: TextStyle(color: Color(0xFF6B7280), fontSize: 14)),
+                              Icon(
+                                _pickedFileName != null ? Icons.check_circle : Icons.upload_file,
+                                color: const Color(0xFF1976D2),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _pickedFileName ?? 'Choose file',
+                                  style: TextStyle(
+                                    color: _pickedFileName != null ? const Color(0xFF111418) : const Color(0xFF6B7280),
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (_pickedFileName != null)
+                                GestureDetector(
+                                  onTap: () => setState(() { _pickedFileName = null; _pickedFileBytes = null; }),
+                                  child: const Icon(Icons.close, size: 18, color: Color(0xFF6B7280)),
+                                ),
                             ],
                           ),
                         ),
@@ -112,6 +154,39 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _datePickerField(String label, TextEditingController ctrl) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          readOnly: true,
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: DateTime.now(),
+              firstDate: DateTime(2020),
+              lastDate: DateTime.now(),
+            );
+            if (picked != null) {
+              ctrl.text = DateFormat('MMMM d, yyyy').format(picked);
+            }
+          },
+          decoration: InputDecoration(
+            hintText: 'Tap to select date',
+            suffixIcon: const Icon(Icons.calendar_today, size: 18, color: Color(0xFF6B7280)),
+            filled: true, fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          ),
+        ),
+      ],
     );
   }
 
