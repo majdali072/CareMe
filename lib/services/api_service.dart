@@ -251,6 +251,22 @@ class ApiService {
     throw ApiException(data['error'] ?? 'Failed to get response');
   }
 
+  // ---------- Export Data ----------
+
+  static Future<Uint8List> exportData(List<Map<String, dynamic>> appointments) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/users/export-data/'),
+      headers: _headers,
+      body: jsonEncode({'appointments': appointments}),
+    );
+
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    }
+    final data = jsonDecode(response.body);
+    throw ApiException(data['error'] ?? 'Failed to export data');
+  }
+
   // ---------- Account ----------
 
   static Future<void> deleteAccount() async {

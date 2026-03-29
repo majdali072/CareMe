@@ -1,26 +1,37 @@
+import io
 import json
 import re
 import base64
 import requests
+from datetime import datetime
 from bson import ObjectId
 from django.conf import settings
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from gridfs import GridFS
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from .db import get_db
 from .auth_utils import hash_password, check_password, create_token, login_required
 
 # ---------- Gemini setup ----------
 
 GEMINI_API_URL = (
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
     f'?key={settings.GEMINI_API_KEY}'
 )
 
 SYSTEM_PROMPT = (
     "You are CareAI, a helpful and friendly health assistant for the CareMe app. "
-    "You help users with their medications, appointments, lab results, and general health questions. "
+    "You ONLY answer questions related to health, medicine, medications, appointments, "
+    "lab results, symptoms, wellness, nutrition, fitness, and mental health. "
+    "If a user asks about anything unrelated to health or medicine, politely decline and say: "
+    "'I can only help with health and medical-related questions. Please ask me something about your health!' "
+    "Do not answer questions about politics, entertainment, coding, math, history, or any non-medical topic. "
     "Be concise, caring, and accurate. If you are unsure about medical advice, recommend consulting a doctor. "
     "Do not diagnose conditions. Keep responses short and helpful."
 )
@@ -366,6 +377,112 @@ def delete_account(request):
     db.users.delete_one({'_id': ObjectId(user_id)})
 
     return JsonResponse({'message': 'Account deleted'})
+
+
+# ---------- Export User Data ----------
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def export_data(request):
+    db = get_db()
+    user_id = request.user_id
+    user = db.users.find_one({'_id': ObjectId(user_id)})
+    user_name = user.get('name', 'User') if user else 'User'
+
+    # Get medications from DB
+    meds = list(db.medications.find({'user_id': user_id}))
+
+    # Get appointments from request body (stored client-side)
+    data = _parse_body(request)
+    appointments = data.get('appointments', [])
+
+    # Build PDF
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=0.75 * inch, bottomMargin=0.75 * inch)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Title'], fontSize=22, textColor=colors.HexColor('#1E3A5F'), spaceAfter=6)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.grey, spaceAfter=20)
+    heading_style = ParagraphStyle('SectionHeading', parent=styles['Heading2'], fontSize=14, textColor=colors.HexColor('#1E3A5F'), spaceBefore=20, spaceAfter=10)
+
+    elements = []
+
+    # Header
+    elements.append(Paragraph('CareMe - My Health Data', title_style))
+    elements.append(Paragraph(f'Generated for {user_name} on {datetime.now().strftime("%B %d, %Y")}', subtitle_style))
+
+    # Medications section
+    elements.append(Paragraph('Medications', heading_style))
+    if meds:
+        med_data = [['Name', 'Dosage', 'Frequency', 'Time', 'Purpose', 'Side Effects']]
+        for m in meds:
+            med_data.append([
+                m.get('name', ''),
+                m.get('dosage', ''),
+                m.get('frequency', ''),
+                m.get('time', ''),
+                m.get('purpose', ''),
+                m.get('sideEffects', ''),
+            ])
+        med_table = Table(med_data, repeatRows=1)
+        med_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F3F4F6')]),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(med_table)
+    else:
+        elements.append(Paragraph('No medications on record.', styles['Normal']))
+
+    elements.append(Spacer(1, 20))
+
+    # Appointments section
+    elements.append(Paragraph('Appointments', heading_style))
+    if appointments:
+        apt_data = [['Date', 'Title', 'Time', 'Type', 'Location']]
+        for a in appointments:
+            date_val = a.get('date', '')
+            if isinstance(date_val, int):
+                date_val = datetime.fromtimestamp(date_val / 1000).strftime('%b %d, %Y')
+            apt_data.append([
+                date_val,
+                a.get('title', ''),
+                a.get('time', ''),
+                a.get('type', ''),
+                a.get('location', ''),
+            ])
+        apt_table = Table(apt_data, repeatRows=1)
+        apt_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F3F4F6')]),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(apt_table)
+    else:
+        elements.append(Paragraph('No appointments on record.', styles['Normal']))
+
+    doc.build(elements)
+    buf.seek(0)
+
+    response = HttpResponse(buf.read(), content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="CareMe_MyData.pdf"'
+    return response
 
 
 # ---------- Chatbot ----------

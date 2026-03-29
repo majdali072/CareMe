@@ -207,7 +207,7 @@ class _AppRootState extends State<AppRoot> {
       case 'chatbot':
         return ChatbotScreen(onBack: () => _navigate('home'));
       case 'account':
-        return AccountScreen(userName: _userName, onLogout: _handleLogout, onBack: () => _navigate('home'));
+        return AccountScreen(userName: _userName, onLogout: _handleLogout, onBack: () => _navigate('home'), appointments: _appointments);
       default:
         return HomeScreen(userName: _userName, onNavigate: _navigate, medications: _medications, appointments: _appointments, labTests: _labTests);
     }

@@ -1,0 +1,15 @@
+Collecting reportlab
+  Downloading reportlab-4.4.10-py3-none-any.whl.metadata (1.7 kB)
+Collecting pillow>=9.0.0 (from reportlab)
+  Downloading pillow-12.1.1-cp313-cp313-win_amd64.whl.metadata (9.0 kB)
+Requirement already satisfied: charset-normalizer in c:\users\twoqu\appdata\local\programs\python\python313\lib\site-packages (from reportlab) (3.4.6)
+Downloading reportlab-4.4.10-py3-none-any.whl (2.0 MB)
+   ---------------------------------------- 2.0/2.0 MB 1.6 MB/s  0:00:01
+Downloading pillow-12.1.1-cp313-cp313-win_amd64.whl (7.0 MB)
+   ---------------------------------------- 7.0/7.0 MB 632.9 kB/s  0:00:10
+Installing collected packages: pillow, reportlab
+
+Successfully installed pillow-12.1.1 reportlab-4.4.10
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip

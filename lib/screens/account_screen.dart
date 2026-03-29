@@ -4,18 +4,21 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import '../models/app_models.dart';
 import '../services/api_service.dart';
 
 class AccountScreen extends StatefulWidget {
   final String userName;
   final VoidCallback onLogout;
   final VoidCallback onBack;
+  final List<Appointment> appointments;
 
   const AccountScreen({
     super.key,
     required this.userName,
     required this.onLogout,
     required this.onBack,
+    required this.appointments,
   });
 
   @override
@@ -572,6 +575,51 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
+  Future<void> _downloadMyData() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF1E3A5F))),
+    );
+
+    try {
+      final appointmentMaps = widget.appointments.map((a) => {
+        'date': a.date,
+        'title': a.title,
+        'time': a.time,
+        'type': a.type,
+        'location': a.location,
+      }).toList();
+
+      final bytes = await ApiService.exportData(appointmentMaps);
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File(p.join(dir.path, 'CareMe_MyData.pdf'));
+      await file.writeAsBytes(bytes);
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // dismiss loading
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PDF saved to ${file.path}'),
+          backgroundColor: const Color(0xFF1E3A5F),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop(); // dismiss loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to download data: $e'),
+          backgroundColor: const Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   void _confirmDeleteAccount() {
     showDialog(
       context: context,
@@ -652,7 +700,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 ]),
                 const SizedBox(height: 14),
                 _buildSection('Privacy Controls', [
-                  _buildNavRow(Icons.storage_outlined, const Color(0xFF7C3AED), 'Download My Data', 'Export all your information', () {}),
+                  _buildNavRow(Icons.storage_outlined, const Color(0xFF7C3AED), 'Download My Data', 'Export all your information', _downloadMyData),
                   _buildNavRow(Icons.shield_outlined, const Color(0xFFDC2626), 'Delete Account', 'Permanently remove account', _confirmDeleteAccount),
                 ]),
               ],
