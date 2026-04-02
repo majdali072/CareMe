@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../services/api_service.dart';
+import 'otp_verification_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final void Function(String name, String email) onLogin;
@@ -74,6 +76,29 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('Connection error. Is the server running?')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isLoading = true);
+    try {
+      final googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+      final account = await googleSignIn.signIn();
+      if (account == null) {
+        // User cancelled the sign-in
+        return;
+      }
+      final name = account.displayName ?? account.email.split('@').first;
+      final email = account.email;
+      widget.onLogin(name, email);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Google sign-in failed. Please try again.')),
         );
       }
     } finally {
@@ -331,6 +356,35 @@ Contact: support@careme.app''';
                                         fontWeight: FontWeight.w600)),
                           ),
                         ),
+                        if (!_isRegistering) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _isLoading ? null : _handleGoogleSignIn,
+                              icon: Image.asset(
+                                'assets/Google_Logo.webp',
+                                width: 20,
+                                height: 20,
+                              ),
+                              label: const Text(
+                                'Sign in with Google',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF111418),
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                side: const BorderSide(color: Color(0xFFE5E7EB)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                                backgroundColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         Center(
                           child: Row(
@@ -360,7 +414,23 @@ Contact: support@careme.app''';
                           const SizedBox(height: 10),
                           Center(
                             child: TextButton(
-                              onPressed: () {},
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => OTPVerificationScreen(
+                                      verificationType: 'email',
+                                      contactInfo: _emailCtrl.text.trim(),
+                                      onVerify: (otp) {
+                                        Navigator.pop(context);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Verified successfully!')),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
                               child: const Text('Forgot password?',
                                   style: TextStyle(
                                       color: Color(0xFF2563EB), fontSize: 13)),
@@ -500,3 +570,4 @@ Contact: support@careme.app''';
     );
   }
 }
+
