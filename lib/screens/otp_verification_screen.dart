@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/api_service.dart';
 
 class OTPVerificationScreen extends StatefulWidget {
   final String verificationType; // "email" or "phone"
@@ -34,6 +35,20 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
     super.initState();
     _focusNodes[0].requestFocus();
     _startTimer();
+    _sendOtp();
+  }
+
+  Future<void> _sendOtp() async {
+    try {
+      await ApiService.sendOtp(widget.contactInfo);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to send OTP: $e';
+          _alertType = 'error';
+        });
+      }
+    }
   }
 
   @override
@@ -108,7 +123,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
   String get _otpCode =>
       _controllers.map((c) => c.text).join();
 
-  void _handleVerify() {
+  Future<void> _handleVerify() async {
     final code = _otpCode;
     if (code.length != 6) {
       setState(() {
@@ -118,21 +133,32 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       return;
     }
 
-    // Demo: "123456" is the correct OTP
-    if (code == '123456') {
-      setState(() => _alertType = 'success');
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        widget.onVerify(code);
-      });
-    } else {
-      setState(() {
-        _errorMessage = 'Invalid OTP code. Please try again.';
-        _alertType = 'error';
-      });
-      for (final c in _controllers) {
-        c.clear();
+    try {
+      await ApiService.verifyOtp(widget.contactInfo, code);
+      if (mounted) {
+        setState(() => _alertType = 'success');
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          widget.onVerify(code);
+        });
       }
-      _focusNodes[0].requestFocus();
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.message;
+          _alertType = 'error';
+        });
+        for (final c in _controllers) {
+          c.clear();
+        }
+        _focusNodes[0].requestFocus();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Connection error. Please try again.';
+          _alertType = 'error';
+        });
+      }
     }
   }
 
@@ -144,6 +170,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
     setState(() => _alertType = null);
     _focusNodes[0].requestFocus();
     _startTimer();
+    _sendOtp();
   }
 
   String _formatTime(int seconds) {
@@ -287,16 +314,25 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                               ],
                             ),
                           ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            "Can't find it? Check your spam or junk folder.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF9CA3AF),
+                              fontSize: 12,
+                            ),
+                          ),
                           const SizedBox(height: 32),
 
                           // OTP Input Fields
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: List.generate(6, (index) {
-                              return Container(
-                                width: 48,
+                              return Flexible(
+                                child: Container(
                                 height: 56,
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
+                                margin: const EdgeInsets.symmetric(horizontal: 3),
                                 child: KeyboardListener(
                                   focusNode: FocusNode(),
                                   onKeyEvent: (event) => _handleKeyEvent(index, event),
@@ -344,45 +380,12 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                                     onChanged: (value) => _handleChange(index, value),
                                   ),
                                 ),
+                              ),
                               );
                             }),
                           ),
                           const SizedBox(height: 24),
 
-                          // Demo Info
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEFF6FF),
-                              border: Border.all(color: const Color(0xFFBFDBFE)),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: 'Demo: ',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                  TextSpan(text: 'Use code '),
-                                  TextSpan(
-                                    text: '123456',
-                                    style: TextStyle(
-                                      fontFamily: 'monospace',
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  TextSpan(text: ' to verify'),
-                                ],
-                              ),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF1E3A5F),
-                              ),
-                            ),
-                          ),
                           const SizedBox(height: 24),
 
                           // Alerts

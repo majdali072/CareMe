@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../models/app_models.dart';
 import '../services/api_service.dart';
+import 'otp_verification_screen.dart';
+import 'change_password_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   final String userName;
@@ -141,26 +143,34 @@ class _AccountScreenState extends State<AccountScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(color: const Color(0xFFD1D5DB), borderRadius: BorderRadius.circular(2)),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFD1D5DB),
+                    borderRadius: BorderRadius.circular(2)),
               ),
               const SizedBox(height: 16),
-              const Text('Change Profile Picture', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text('Change Profile Picture',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
               ListTile(
-                leading: const Icon(Icons.photo_library_outlined, color: Color(0xFF2563EB)),
+                leading: const Icon(Icons.photo_library_outlined,
+                    color: Color(0xFF2563EB)),
                 title: const Text('Choose from Gallery'),
                 onTap: () => Navigator.pop(ctx, 'gallery'),
               ),
               ListTile(
-                leading: const Icon(Icons.camera_alt_outlined, color: Color(0xFF2563EB)),
+                leading: const Icon(Icons.camera_alt_outlined,
+                    color: Color(0xFF2563EB)),
                 title: const Text('Take a Photo'),
                 onTap: () => Navigator.pop(ctx, 'camera'),
               ),
               if (_profileImage != null)
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Color(0xFFDC2626)),
-                  title: const Text('Remove Photo', style: TextStyle(color: Color(0xFFDC2626))),
+                  leading: const Icon(Icons.delete_outline,
+                      color: Color(0xFFDC2626)),
+                  title: const Text('Remove Photo',
+                      style: TextStyle(color: Color(0xFFDC2626))),
                   onTap: () => Navigator.pop(ctx, 'remove'),
                 ),
             ],
@@ -176,8 +186,10 @@ class _AccountScreenState extends State<AccountScreen> {
       return;
     }
 
-    final source = choice == 'camera' ? ImageSource.camera : ImageSource.gallery;
-    final picked = await ImagePicker().pickImage(source: source, maxWidth: 600, maxHeight: 600, imageQuality: 80);
+    final source =
+        choice == 'camera' ? ImageSource.camera : ImageSource.gallery;
+    final picked = await ImagePicker().pickImage(
+        source: source, maxWidth: 600, maxHeight: 600, imageQuality: 80);
     if (picked == null) return;
 
     final dir = await getApplicationDocumentsDirectory();
@@ -241,7 +253,8 @@ class _AccountScreenState extends State<AccountScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
@@ -256,35 +269,52 @@ class _AccountScreenState extends State<AccountScreen> {
                     Container(
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
                       decoration: const BoxDecoration(
-                        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+                        border: Border(
+                            bottom: BorderSide(color: Color(0xFFE5E7EB))),
                       ),
                       child: Column(
                         children: [
                           Container(
-                            width: 40, height: 4,
-                            decoration: BoxDecoration(color: const Color(0xFFD1D5DB), borderRadius: BorderRadius.circular(2)),
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFD1D5DB),
+                                borderRadius: BorderRadius.circular(2)),
                           ),
                           const SizedBox(height: 12),
-                          const Text('Select Country', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          const Text('Select Country',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 12),
                           TextField(
                             controller: searchCtrl,
                             onChanged: (val) {
                               setSheetState(() {
-                                filtered = _countries.where((c) =>
-                                  c['name']!.toLowerCase().contains(val.toLowerCase()) ||
-                                  c['code']!.contains(val)
-                                ).toList();
+                                filtered = _countries
+                                    .where((c) =>
+                                        c['name']!
+                                            .toLowerCase()
+                                            .contains(val.toLowerCase()) ||
+                                        c['code']!.contains(val))
+                                    .toList();
                               });
                             },
                             decoration: InputDecoration(
                               hintText: 'Search country...',
-                              prefixIcon: const Icon(Icons.search, size: 20, color: Color(0xFF9CA3AF)),
+                              prefixIcon: const Icon(Icons.search,
+                                  size: 20, color: Color(0xFF9CA3AF)),
                               filled: true,
                               fillColor: const Color(0xFFF9FAFB),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFFE5E7EB))),
+                              enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: const BorderSide(
+                                      color: Color(0xFFE5E7EB))),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
                             ),
                           ),
                         ],
@@ -296,21 +326,27 @@ class _AccountScreenState extends State<AccountScreen> {
                         itemCount: filtered.length,
                         itemBuilder: (ctx, i) {
                           final country = filtered[i];
-                          final isSelected = country['code'] == _countryCode && country['flag'] == _countryFlag;
+                          final isSelected = country['code'] == _countryCode &&
+                              country['flag'] == _countryFlag;
                           return ListTile(
-                            leading: Text(country['flag']!, style: const TextStyle(fontSize: 24)),
-                            title: Text(country['name']!, style: const TextStyle(fontSize: 15)),
+                            leading: Text(country['flag']!,
+                                style: const TextStyle(fontSize: 24)),
+                            title: Text(country['name']!,
+                                style: const TextStyle(fontSize: 15)),
                             trailing: Text(
                               country['code']!,
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF6B7280),
+                                color: isSelected
+                                    ? const Color(0xFF2563EB)
+                                    : const Color(0xFF6B7280),
                               ),
                             ),
                             selected: isSelected,
                             selectedTileColor: const Color(0xFFEFF6FF),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
                             onTap: () {
                               onSelect(country);
                               Navigator.pop(ctx);
@@ -364,12 +400,17 @@ class _AccountScreenState extends State<AccountScreen> {
                           left: 0,
                           top: 0,
                           child: IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.white),
+                            icon: const Icon(Icons.arrow_back,
+                                color: Colors.white),
                             onPressed: widget.onBack,
                           ),
                         ),
                         const Center(
-                          child: Text('Account', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                          child: Text('Account',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
@@ -380,23 +421,33 @@ class _AccountScreenState extends State<AccountScreen> {
                         children: [
                           _buildAvatar(80),
                           Positioned(
-                            bottom: 0, right: 0,
+                            bottom: 0,
+                            right: 0,
                             child: Container(
-                              width: 30, height: 30,
+                              width: 30,
+                              height: 30,
                               decoration: BoxDecoration(
                                 color: const Color(0xFF1976D2),
                                 borderRadius: BorderRadius.circular(15),
-                                border: Border.all(color: Colors.white, width: 2),
+                                border:
+                                    Border.all(color: Colors.white, width: 2),
                               ),
-                              child: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
+                              child: const Icon(Icons.camera_alt,
+                                  color: Colors.white, size: 14),
                             ),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text(_fullName, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),
-                    Text(_email, style: const TextStyle(color: Color(0xFFBFDBFE), fontSize: 13)),
+                    Text(_fullName,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600)),
+                    Text(_email,
+                        style: const TextStyle(
+                            color: Color(0xFFBFDBFE), fontSize: 13)),
                   ],
                 ),
               ),
@@ -408,20 +459,44 @@ class _AccountScreenState extends State<AccountScreen> {
               children: [
                 _buildSection('Personal Information', [
                   _buildInfoRow(Icons.mail_outline, 'Email', _email),
-                  _buildInfoRow(Icons.phone_outlined, 'Phone', _phone.isEmpty ? 'Not set' : _phone),
-                  _buildInfoRow(Icons.cake_outlined, 'Date of Birth', _dateOfBirth.isEmpty ? 'Not set' : _dateOfBirth),
-                  _buildInfoRow(Icons.location_on_outlined, 'Address', _address.isEmpty ? 'Not set' : _address),
+                  _buildInfoRow(Icons.phone_outlined, 'Phone',
+                      _phone.isEmpty ? 'Not set' : _phone),
+                  _buildInfoRow(Icons.cake_outlined, 'Date of Birth',
+                      _dateOfBirth.isEmpty ? 'Not set' : _dateOfBirth),
+                  _buildInfoRow(Icons.location_on_outlined, 'Address',
+                      _address.isEmpty ? 'Not set' : _address),
                 ]),
                 const SizedBox(height: 14),
                 _buildSection('Settings', [
-                  _buildNavRow(Icons.person_outline, const Color(0xFF2563EB), 'Edit Profile', 'Update your personal information', () => setState(() => _showEditProfile = true)),
-                  _buildNavRow(Icons.lock_outline, const Color(0xFFDC2626), 'Security & Privacy', 'Password, privacy controls', () => setState(() => _showSecurity = true)),
+                  _buildNavRow(
+                      Icons.person_outline,
+                      const Color(0xFF2563EB),
+                      'Edit Profile',
+                      'Update your personal information',
+                      () => setState(() => _showEditProfile = true)),
+                  _buildNavRow(
+                      Icons.lock_outline,
+                      const Color(0xFFDC2626),
+                      'Security & Privacy',
+                      'Password, privacy controls',
+                      () => setState(() => _showSecurity = true)),
                 ]),
                 const SizedBox(height: 14),
                 _buildSection('Support', [
-                  _buildNavRow(Icons.help_outline, const Color(0xFF16A34A), 'Help & Support', 'FAQs and contact support', () {}),
-                  _buildNavRow(Icons.description_outlined, const Color(0xFF7C3AED), 'Terms & Privacy', 'View policies', () {}),
-                  _buildNavRow(Icons.info_outline, const Color(0xFF0891B2), 'About CareMe', 'Version 1.0.0', () {}),
+                  _buildNavRow(
+                      Icons.help_outline,
+                      const Color(0xFF16A34A),
+                      'Help & Support',
+                      'FAQs and contact support',
+                      _showHelpSupport),
+                  _buildNavRow(
+                      Icons.description_outlined,
+                      const Color(0xFF7C3AED),
+                      'Terms & Privacy',
+                      'View policies',
+                      _showTermsPrivacy),
+                  _buildNavRow(Icons.info_outline, const Color(0xFF0891B2),
+                      'About CareMe', 'Version 1.0.0', _showAbout),
                 ]),
                 const SizedBox(height: 20),
                 SizedBox(
@@ -435,7 +510,8 @@ class _AccountScreenState extends State<AccountScreen> {
                       foregroundColor: const Color(0xFFDC2626),
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
                     ),
                   ),
                 ),
@@ -459,14 +535,31 @@ class _AccountScreenState extends State<AccountScreen> {
         children: [
           Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF1976D2), Color(0xFF0D47A1)]),
+              gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1976D2), Color(0xFF0D47A1)]),
             ),
             child: SafeArea(
               bottom: false,
               child: Stack(
                 children: [
-                  Positioned(left: 16, top: 14, child: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => setState(() => _showEditProfile = false))),
-                  const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: Text('Edit Profile', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)))),
+                  Positioned(
+                      left: 16,
+                      top: 14,
+                      child: IconButton(
+                          icon:
+                              const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () =>
+                              setState(() => _showEditProfile = false))),
+                  const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                          child: Text('Edit Profile',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold)))),
                 ],
               ),
             ),
@@ -480,7 +573,11 @@ class _AccountScreenState extends State<AccountScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 8)
+                    ],
                   ),
                   child: Column(
                     children: [
@@ -490,11 +587,18 @@ class _AccountScreenState extends State<AccountScreen> {
                           children: [
                             _buildAvatar(80),
                             Positioned(
-                              bottom: 0, right: 0,
+                              bottom: 0,
+                              right: 0,
                               child: Container(
-                                width: 30, height: 30,
-                                decoration: BoxDecoration(color: const Color(0xFF1976D2), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.white, width: 2)),
-                                child: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                    color: const Color(0xFF1976D2),
+                                    borderRadius: BorderRadius.circular(15),
+                                    border: Border.all(
+                                        color: Colors.white, width: 2)),
+                                child: const Icon(Icons.camera_alt,
+                                    color: Colors.white, size: 14),
                               ),
                             ),
                           ],
@@ -503,7 +607,9 @@ class _AccountScreenState extends State<AccountScreen> {
                       const SizedBox(height: 8),
                       GestureDetector(
                         onTap: _pickProfileImage,
-                        child: const Text('Change profile picture', style: TextStyle(color: Color(0xFF2563EB), fontSize: 12)),
+                        child: const Text('Change profile picture',
+                            style: TextStyle(
+                                color: Color(0xFF2563EB), fontSize: 12)),
                       ),
                     ],
                   ),
@@ -544,7 +650,9 @@ class _AccountScreenState extends State<AccountScreen> {
                               });
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Profile updated successfully')),
+                                  const SnackBar(
+                                      content:
+                                          Text('Profile updated successfully')),
                                 );
                               }
                             } catch (e) {
@@ -560,11 +668,18 @@ class _AccountScreenState extends State<AccountScreen> {
                       backgroundColor: const Color(0xFF1976D2),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
                     ),
                     child: _isSaving
-                        ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                        : const Text('Save Changes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2.5))
+                        : const Text('Save Changes',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                 ),
               ],
@@ -579,17 +694,20 @@ class _AccountScreenState extends State<AccountScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF1E3A5F))),
+      builder: (_) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFF1E3A5F))),
     );
 
     try {
-      final appointmentMaps = widget.appointments.map((a) => {
-        'date': a.date,
-        'title': a.title,
-        'time': a.time,
-        'type': a.type,
-        'location': a.location,
-      }).toList();
+      final appointmentMaps = widget.appointments
+          .map((a) => {
+                'date': a.date,
+                'title': a.title,
+                'time': a.time,
+                'type': a.type,
+                'location': a.location,
+              })
+          .toList();
 
       final bytes = await ApiService.exportData(appointmentMaps);
       final dir = await getApplicationDocumentsDirectory();
@@ -620,6 +738,369 @@ class _AccountScreenState extends State<AccountScreen> {
     }
   }
 
+  void _showTermsPrivacy() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF1976D2), Color(0xFF0D47A1)]),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Terms & Privacy',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: Colors.white)),
+                  IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(ctx)),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _termsBlock('Terms of Service', _termsText),
+                    const SizedBox(height: 16),
+                    _termsBlock('Privacy Policy', _privacyText),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1976D2),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text('Close'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _termsBlock(String title, String content) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+            ),
+            child: Text(title,
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(content,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showHelpSupport() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF1976D2), Color(0xFF0D47A1)]),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Help & Support',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: Colors.white)),
+                  IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(ctx)),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Frequently Asked Questions',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
+                    const SizedBox(height: 12),
+                    _faqItem('How do I add a medication?',
+                        'Go to the Medications tab and tap the + button. Fill in the medication details and tap Save.'),
+                    _faqItem('How do I upload lab results?',
+                        'Go to the Lab Tests tab and tap the + button. You can upload a file or enter the details manually.'),
+                    _faqItem('Is my health data secure?',
+                        'Yes. Your data is encrypted in transit and at rest. We never sell or share your personal health information.'),
+                    _faqItem('How do I change my password?',
+                        'Go to Settings > Security & Privacy > Change Password. You will need to verify your identity via email OTP first.'),
+                    _faqItem('How do I delete my account?',
+                        'Go to Settings > Security & Privacy > Delete Account. This action is permanent and cannot be undone.'),
+                    _faqItem('Can I export my data?',
+                        'Yes. Go to Settings > Security & Privacy > Download My Data to export your health records as a PDF.'),
+                    const Divider(height: 32),
+                    const Text('Contact Support',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
+                    const SizedBox(height: 12),
+                    const ListTile(
+                      leading:
+                          Icon(Icons.email_outlined, color: Color(0xFF2563EB)),
+                      title: Text('Email',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500, fontSize: 14)),
+                      subtitle: Text('support@careme.app',
+                          style: TextStyle(fontSize: 13)),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                    const Divider(height: 32),
+                    const Text(
+                      'Our support team typically responds within 24 hours.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _faqItem(String question, String answer) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(question,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: Color(0xFF111418))),
+          const SizedBox(height: 4),
+          Text(answer,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+        ],
+      ),
+    );
+  }
+
+  static const String _termsText = '''1. Acceptance of Terms
+By accessing and using CareMe, you accept and agree to be bound by these Terms of Service.
+
+2. Description of Service
+CareMe is a healthcare management application that helps users track medications, lab test results, and medical appointments. It is not a substitute for professional medical advice.
+
+3. User Accounts
+You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.
+
+4. Medical Disclaimer
+THE APP IS NOT A MEDICAL DEVICE AND DOES NOT PROVIDE MEDICAL ADVICE. Always seek the advice of your physician for any medical condition.
+
+5. User Responsibilities
+You agree to use the App only for lawful purposes and are solely responsible for the accuracy of your health information.
+
+6. Limitation of Liability
+IN NO EVENT SHALL CAREME BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT OF YOUR USE OF THE APP.''';
+
+  static const String _privacyText = '''1. Information We Collect
+Personal Information: Name, email, phone, date of birth, and address. Health Information: Medication records, lab results, appointment details.
+
+2. How We Use Your Information
+To provide app functionality, send reminders, improve user experience, and ensure account security.
+
+3. Data Security
+We implement industry-standard security measures. Your data is encrypted in transit and at rest.
+
+4. Data Sharing
+We do not sell, trade, or rent your personal or health information to third parties.
+
+5. Your Privacy Rights
+You have the right to access, correct, delete, and export your personal data at any time.
+
+6. HIPAA Compliance
+This App is designed for personal use and is not a HIPAA-covered entity.
+
+Contact: support@careme.app''';
+
+  void _showAbout() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF1976D2), Color(0xFF0D47A1)]),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('About CareMe',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: Colors.white)),
+                  IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(ctx)),
+                ],
+              ),
+            ),
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  // Logo
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: Image.asset('assets/CareMe-Logo.png',
+                        width: 80, height: 80),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('CareMe',
+                      style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF111418))),
+                  const SizedBox(height: 4),
+                  const Text('Version 1.0.0',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'CareMe is your personal health companion, designed to help you stay on top of your health by managing medications, tracking lab results, and organizing medical appointments — all in one place.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 13, color: Color(0xFF6B7280), height: 1.5),
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF9FAFB),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Key Features',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Color(0xFF111418))),
+                        SizedBox(height: 10),
+                        _FeatureRow(
+                            icon: Icons.medication_outlined,
+                            color: Color(0xFF2563EB),
+                            text: 'Medication tracking & reminders'),
+                        SizedBox(height: 8),
+                        _FeatureRow(
+                            icon: Icons.science_outlined,
+                            color: Color(0xFF7C3AED),
+                            text: 'Lab test records & file uploads'),
+                        SizedBox(height: 8),
+                        _FeatureRow(
+                            icon: Icons.calendar_month_outlined,
+                            color: Color(0xFF16A34A),
+                            text: 'Appointment scheduling'),
+                        SizedBox(height: 8),
+                        _FeatureRow(
+                            icon: Icons.smart_toy_outlined,
+                            color: Color(0xFFF97316),
+                            text: 'AI-powered health assistant'),
+                        SizedBox(height: 8),
+                        _FeatureRow(
+                            icon: Icons.picture_as_pdf_outlined,
+                            color: Color(0xFFDC2626),
+                            text: 'Export health data as PDF'),
+                        SizedBox(height: 8),
+                        _FeatureRow(
+                            icon: Icons.lock_outline,
+                            color: Color(0xFF0891B2),
+                            text: 'Secure & private by design'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Built with care for your well-being.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF9CA3AF),
+                        fontStyle: FontStyle.italic),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'support@careme.app',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF2563EB)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _confirmDeleteAccount() {
     showDialog(
       context: context,
@@ -627,9 +1108,11 @@ class _AccountScreenState extends State<AccountScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 28),
+            Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFDC2626), size: 28),
             SizedBox(width: 10),
-            Text('Delete Account', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Delete Account',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
         content: const Text(
@@ -639,7 +1122,8 @@ class _AccountScreenState extends State<AccountScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF6B7280))),
+            child: const Text('Cancel',
+                style: TextStyle(color: Color(0xFF6B7280))),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -649,7 +1133,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 if (mounted) {
                   widget.onLogout();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Account deleted successfully')),
+                    const SnackBar(
+                        content: Text('Account deleted successfully')),
                   );
                 }
               } catch (e) {
@@ -663,7 +1148,8 @@ class _AccountScreenState extends State<AccountScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFDC2626),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             child: const Text('Delete Forever'),
           ),
@@ -679,14 +1165,31 @@ class _AccountScreenState extends State<AccountScreen> {
         children: [
           Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF1976D2), Color(0xFF0D47A1)]),
+              gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1976D2), Color(0xFF0D47A1)]),
             ),
             child: SafeArea(
               bottom: false,
               child: Stack(
                 children: [
-                  Positioned(left: 16, top: 14, child: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => setState(() => _showSecurity = false))),
-                  const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: Text('Security & Privacy', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)))),
+                  Positioned(
+                      left: 16,
+                      top: 14,
+                      child: IconButton(
+                          icon:
+                              const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () =>
+                              setState(() => _showSecurity = false))),
+                  const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                          child: Text('Security & Privacy',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold)))),
                 ],
               ),
             ),
@@ -696,12 +1199,42 @@ class _AccountScreenState extends State<AccountScreen> {
             child: Column(
               children: [
                 _buildSection('Password & Authentication', [
-                  _buildNavRow(Icons.lock_outline, const Color(0xFFDC2626), 'Change Password', 'Last changed 3 months ago', () {}),
+                  _buildNavRow(Icons.lock_outline, const Color(0xFFDC2626),
+                      'Change Password', 'Verify your identity first', () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => OTPVerificationScreen(
+                          verificationType: 'email',
+                          contactInfo: _email,
+                          onVerify: (otp) {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ChangePasswordScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  }),
                 ]),
                 const SizedBox(height: 14),
                 _buildSection('Privacy Controls', [
-                  _buildNavRow(Icons.storage_outlined, const Color(0xFF7C3AED), 'Download My Data', 'Export all your information', _downloadMyData),
-                  _buildNavRow(Icons.shield_outlined, const Color(0xFFDC2626), 'Delete Account', 'Permanently remove account', _confirmDeleteAccount),
+                  _buildNavRow(
+                      Icons.storage_outlined,
+                      const Color(0xFF7C3AED),
+                      'Download My Data',
+                      'Export all your information',
+                      _downloadMyData),
+                  _buildNavRow(
+                      Icons.shield_outlined,
+                      const Color(0xFFDC2626),
+                      'Delete Account',
+                      'Permanently remove account',
+                      _confirmDeleteAccount),
                 ]),
               ],
             ),
@@ -715,10 +1248,12 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Widget _buildAvatar(double size) {
     return Container(
-      width: size, height: size,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         gradient: _profileImage == null
-            ? const LinearGradient(colors: [Color(0xFF3B82F6), Color(0xFF2563EB)])
+            ? const LinearGradient(
+                colors: [Color(0xFF3B82F6), Color(0xFF2563EB)])
             : null,
         borderRadius: BorderRadius.circular(size / 2),
         image: _profileImage != null
@@ -732,7 +1267,10 @@ class _AccountScreenState extends State<AccountScreen> {
           ? Center(
               child: Text(
                 _fullName.isNotEmpty ? _fullName[0].toUpperCase() : 'U',
-                style: TextStyle(color: Colors.white, fontSize: size * 0.4, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: size * 0.4,
+                    fontWeight: FontWeight.bold),
               ),
             )
           : null,
@@ -744,14 +1282,20 @@ class _AccountScreenState extends State<AccountScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF111418), fontSize: 15)),
+            child: Text(title,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111418),
+                    fontSize: 15)),
           ),
           const Divider(height: 1, color: Color(0xFFF3F4F6)),
           ...children,
@@ -770,8 +1314,12 @@ class _AccountScreenState extends State<AccountScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
-              Text(value, style: const TextStyle(fontSize: 14, color: Color(0xFF111418))),
+              Text(label,
+                  style:
+                      const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+              Text(value,
+                  style:
+                      const TextStyle(fontSize: 14, color: Color(0xFF111418))),
             ],
           ),
         ],
@@ -779,7 +1327,8 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  Widget _buildNavRow(IconData icon, Color iconBg, String title, String subtitle, VoidCallback onTap) {
+  Widget _buildNavRow(IconData icon, Color iconBg, String title,
+      String subtitle, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -787,8 +1336,11 @@ class _AccountScreenState extends State<AccountScreen> {
         child: Row(
           children: [
             Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(color: iconBg.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                  color: iconBg.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12)),
               child: Icon(icon, color: iconBg, size: 20),
             ),
             const SizedBox(width: 14),
@@ -796,8 +1348,14 @@ class _AccountScreenState extends State<AccountScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.w500, color: Color(0xFF111418), fontSize: 14)),
-                  Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+                  Text(title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF111418),
+                          fontSize: 14)),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          fontSize: 12, color: Color(0xFF9CA3AF))),
                 ],
               ),
             ),
@@ -814,7 +1372,11 @@ class _AccountScreenState extends State<AccountScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Phone Number', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: FontWeight.w500)),
+          const Text('Phone Number',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF6B7280),
+                  fontWeight: FontWeight.w500)),
           const SizedBox(height: 6),
           Row(
             children: [
@@ -828,7 +1390,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF9FAFB),
                     border: Border.all(color: const Color(0xFFD1D5DB)),
@@ -839,9 +1402,14 @@ class _AccountScreenState extends State<AccountScreen> {
                     children: [
                       Text(_countryFlag, style: const TextStyle(fontSize: 20)),
                       const SizedBox(width: 6),
-                      Text(_countryCode, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF111418))),
+                      Text(_countryCode,
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF111418))),
                       const SizedBox(width: 4),
-                      const Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF6B7280)),
+                      const Icon(Icons.keyboard_arrow_down,
+                          size: 18, color: Color(0xFF6B7280)),
                     ],
                   ),
                 ),
@@ -855,9 +1423,14 @@ class _AccountScreenState extends State<AccountScreen> {
                     hintText: 'Phone number',
                     filled: true,
                     fillColor: const Color(0xFFF9FAFB),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
                   ),
                 ),
               ),
@@ -868,13 +1441,18 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  Widget _buildEditField(String label, TextEditingController ctrl, {TextInputType keyboardType = TextInputType.text}) {
+  Widget _buildEditField(String label, TextEditingController ctrl,
+      {TextInputType keyboardType = TextInputType.text}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: FontWeight.w500)),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF6B7280),
+                  fontWeight: FontWeight.w500)),
           const SizedBox(height: 6),
           TextField(
             controller: ctrl,
@@ -882,9 +1460,14 @@ class _AccountScreenState extends State<AccountScreen> {
             decoration: InputDecoration(
               filled: true,
               fillColor: const Color(0xFFF9FAFB),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
         ],
@@ -898,7 +1481,11 @@ class _AccountScreenState extends State<AccountScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: FontWeight.w500)),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF6B7280),
+                  fontWeight: FontWeight.w500)),
           const SizedBox(height: 6),
           TextField(
             controller: ctrl,
@@ -924,14 +1511,43 @@ class _AccountScreenState extends State<AccountScreen> {
               filled: true,
               fillColor: const Color(0xFFF9FAFB),
               hintText: 'Tap to select date',
-              suffixIcon: const Icon(Icons.calendar_today, size: 18, color: Color(0xFF6B7280)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              suffixIcon: const Icon(Icons.calendar_today,
+                  size: 18, color: Color(0xFF6B7280)),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FeatureRow extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  const _FeatureRow(
+      {required this.icon, required this.color, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 10),
+        Expanded(
+            child: Text(text,
+                style:
+                    const TextStyle(fontSize: 13, color: Color(0xFF4B5563)))),
+      ],
     );
   }
 }

@@ -48,22 +48,55 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (_isRegistering) {
+      final issues = <String>[];
+      if (password.length < 8) issues.add('at least 8 characters');
+      if (!password.contains(RegExp(r'[A-Z]'))) issues.add('an uppercase letter');
+      if (!password.contains(RegExp(r'[a-z]'))) issues.add('a lowercase letter');
+      if (!password.contains(RegExp(r'[0-9]'))) issues.add('a number');
+      if (!password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))) issues.add('a special character');
+      if (issues.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Password must contain: ${issues.join(", ")}')),
+        );
+        return;
+      }
+    }
+
     setState(() => _isLoading = true);
 
     try {
+      late final Map<String, dynamic> result;
       if (_isRegistering) {
-        final result = await ApiService.register(
+        result = await ApiService.register(
           name: name,
           email: email,
           password: password,
         );
-        widget.onLogin(result['user']['name'], result['user']['email']);
       } else {
-        final result = await ApiService.login(
+        result = await ApiService.login(
           email: email,
           password: password,
         );
-        widget.onLogin(result['user']['name'], result['user']['email']);
+      }
+      if (mounted) {
+        final userName = result['user']['name'] as String;
+        final userEmail = result['user']['email'] as String;
+        // OTP verification on sign in/register
+        // Navigator.push(
+        //   context,
+        //   MaterialPageRoute(
+        //     builder: (_) => OTPVerificationScreen(
+        //       verificationType: 'email',
+        //       contactInfo: userEmail,
+        //       onVerify: (otp) {
+        //         Navigator.pop(context);
+        //         widget.onLogin(userName, userEmail);
+        //       },
+        //     ),
+        //   ),
+        // );
+        widget.onLogin(userName, userEmail);
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -94,11 +127,28 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       final name = account.displayName ?? account.email.split('@').first;
       final email = account.email;
+      // OTP verification on Google sign-in
+      // if (mounted) {
+      //   Navigator.push(
+      //     context,
+      //     MaterialPageRoute(
+      //       builder: (_) => OTPVerificationScreen(
+      //         verificationType: 'email',
+      //         contactInfo: email,
+      //         onVerify: (otp) {
+      //           Navigator.pop(context);
+      //           widget.onLogin(name, email);
+      //         },
+      //       ),
+      //     ),
+      //   );
+      // }
       widget.onLogin(name, email);
     } catch (e) {
+      debugPrint('Google Sign-In Error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Google sign-in failed. Please try again.')),
+          SnackBar(content: Text('Google sign-in failed: $e')),
         );
       }
     } finally {
@@ -154,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Navigator.pop(ctx);
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF111418),
+                          backgroundColor: const Color(0xFF1976D2),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
@@ -308,8 +358,10 @@ Contact: support@careme.app''';
                             'Password',
                             _obscurePassword,
                             () => setState(
-                                () => _obscurePassword = !_obscurePassword)),
+                                () => _obscurePassword = !_obscurePassword),
+                            onChanged: _isRegistering ? (_) => setState(() {}) : null),
                         if (_isRegistering) ...[
+                          _buildPasswordStrengthBar(_passwordCtrl.text),
                           const SizedBox(height: 14),
                           _buildPasswordField(
                               _confirmPasswordCtrl,
@@ -491,7 +543,7 @@ Contact: support@careme.app''';
   }
 
   Widget _buildPasswordField(TextEditingController ctrl, String label,
-      bool obscure, VoidCallback toggle) {
+      bool obscure, VoidCallback toggle, {ValueChanged<String>? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -504,6 +556,7 @@ Contact: support@careme.app''';
         TextField(
           controller: ctrl,
           obscureText: obscure,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: '••••••••',
             prefixIcon: const Icon(Icons.lock_outline,
@@ -529,6 +582,58 @@ Contact: support@careme.app''';
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPasswordStrengthBar(String password) {
+    if (password.isEmpty) return const SizedBox.shrink();
+
+    int score = 0;
+    if (password.length >= 8) score++;
+    if (password.contains(RegExp(r'[A-Z]'))) score++;
+    if (password.contains(RegExp(r'[a-z]'))) score++;
+    if (password.contains(RegExp(r'[0-9]'))) score++;
+    if (password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))) score++;
+
+    final labels = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
+    final colors = [
+      const Color(0xFFDC2626),
+      const Color(0xFFF97316),
+      const Color(0xFFEAB308),
+      const Color(0xFF22C55E),
+      const Color(0xFF16A34A),
+    ];
+
+    final index = (score - 1).clamp(0, 4);
+    final label = labels[index];
+    final color = colors[index];
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: List.generate(5, (i) {
+              return Expanded(
+                child: Container(
+                  height: 4,
+                  margin: EdgeInsets.only(right: i < 4 ? 4 : 0),
+                  decoration: BoxDecoration(
+                    color: i < score ? color : const Color(0xFFE5E7EB),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
     );
   }
 

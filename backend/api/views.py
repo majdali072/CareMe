@@ -16,6 +16,7 @@ from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from django.core.mail import send_mail
 from .db import get_db
 from .auth_utils import hash_password, check_password, create_token, login_required
 
@@ -115,6 +116,102 @@ def login(request):
     })
 
 
+# ---------- OTP ----------
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def send_otp(request):
+    data = _parse_body(request)
+    email = (data.get('email') or '').strip().lower()
+
+    if not email or not _valid_email(email):
+        return JsonResponse({'error': 'Valid email is required'}, status=400)
+
+    db = get_db()
+    code = str(random.randint(100000, 999999))
+
+    # Store OTP with 10-minute expiry
+    db.otp_codes.update_one(
+        {'email': email},
+        {'$set': {
+            'email': email,
+            'code': code,
+            'created_at': datetime.utcnow(),
+            'expires_at': datetime.utcnow() + timedelta(minutes=10),
+        }},
+        upsert=True,
+    )
+
+    try:
+        send_mail(
+            subject='CareMe - Your Verification Code',
+            message=f'Your CareMe verification code is: {code}\n\nThis code expires in 10 minutes.',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to send email: {str(e)}'}, status=500)
+
+    return JsonResponse({'message': 'OTP sent successfully'})
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def verify_otp(request):
+    data = _parse_body(request)
+    email = (data.get('email') or '').strip().lower()
+    code = (data.get('code') or '').strip()
+
+    if not email or not code:
+        return JsonResponse({'error': 'Email and code are required'}, status=400)
+
+    db = get_db()
+    record = db.otp_codes.find_one({'email': email})
+
+    if not record:
+        return JsonResponse({'error': 'No OTP found. Please request a new one.'}, status=400)
+
+    if datetime.utcnow() > record['expires_at']:
+        db.otp_codes.delete_one({'email': email})
+        return JsonResponse({'error': 'OTP has expired. Please request a new one.'}, status=400)
+
+    if record['code'] != code:
+        return JsonResponse({'error': 'Invalid OTP code.'}, status=400)
+
+    # OTP is valid — clean up
+    db.otp_codes.delete_one({'email': email})
+    return JsonResponse({'message': 'OTP verified successfully'})
+
+
+# ---------- Change Password ----------
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def change_password(request):
+    data = _parse_body(request)
+    new_password = data.get('new_password') or ''
+
+    if len(new_password) < 8:
+        return JsonResponse({'error': 'Password must be at least 8 characters'}, status=400)
+    if not re.search(r'[A-Z]', new_password):
+        return JsonResponse({'error': 'Password must contain an uppercase letter'}, status=400)
+    if not re.search(r'[a-z]', new_password):
+        return JsonResponse({'error': 'Password must contain a lowercase letter'}, status=400)
+    if not re.search(r'[0-9]', new_password):
+        return JsonResponse({'error': 'Password must contain a number'}, status=400)
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', new_password):
+        return JsonResponse({'error': 'Password must contain a special character'}, status=400)
+
+    db = get_db()
+    db.users.update_one(
+        {'_id': ObjectId(request.user_id)},
+        {'$set': {'password': hash_password(new_password)}},
+    )
+    return JsonResponse({'message': 'Password changed successfully'})
+
+
 # ---------- User Profile ----------
 
 @csrf_exempt
@@ -179,6 +276,10 @@ def medications(request):
         'time': data.get('time', ''),
         'purpose': data.get('purpose', ''),
         'sideEffects': data.get('sideEffects', ''),
+        'schedule': data.get('schedule'),
+        'startDate': data.get('startDate'),
+        'endDate': data.get('endDate'),
+        'isLifetime': data.get('isLifetime', False),
     }
 
     if not med['name']:
@@ -212,7 +313,8 @@ def medication_detail(request, med_id):
     # PUT - update
     data = _parse_body(request)
     updates = {}
-    for field in ('name', 'dosage', 'frequency', 'time', 'purpose', 'sideEffects'):
+    for field in ('name', 'dosage', 'frequency', 'time', 'purpose', 'sideEffects',
+                   'schedule', 'startDate', 'endDate', 'isLifetime'):
         if field in data:
             updates[field] = data[field]
 

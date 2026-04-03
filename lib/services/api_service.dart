@@ -67,6 +67,49 @@ class ApiService {
     throw ApiException(data['error'] ?? 'Login failed');
   }
 
+  // ---------- OTP ----------
+
+  static Future<void> sendOtp(String email) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/auth/send-otp/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email}),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode != 200) {
+      throw ApiException(data['error'] ?? 'Failed to send OTP');
+    }
+  }
+
+  static Future<void> verifyOtp(String email, String code) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/auth/verify-otp/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email, 'code': code}),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode != 200) {
+      throw ApiException(data['error'] ?? 'Invalid OTP');
+    }
+  }
+
+  // ---------- Change Password ----------
+
+  static Future<void> changePassword(String newPassword) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/auth/change-password/'),
+      headers: _headers,
+      body: jsonEncode({'new_password': newPassword}),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode != 200) {
+      throw ApiException(data['error'] ?? 'Failed to change password');
+    }
+  }
+
   // ---------- Profile ----------
 
   static Future<Map<String, dynamic>> getProfile() async {

@@ -29,6 +29,7 @@ class MedicationsScreen extends StatefulWidget {
 class _MedicationsScreenState extends State<MedicationsScreen> {
   int? _expandedMed;
   int? _expandedLab;
+  int? _scheduleOpenMed;
 
   Future<void> _downloadFile(LabTest lab) async {
     try {
@@ -38,14 +39,12 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       final bytes = await ApiService.downloadLabTestFile(lab.id!);
 
       if (kIsWeb) {
-        // Web: trigger browser download
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('File download not supported on web')),
         );
         return;
       }
 
-      // Desktop/mobile: let user pick save location
       final savePath = await FilePicker.platform.saveFile(
         dialogTitle: 'Save ${lab.fileName}',
         fileName: lab.fileName,
@@ -69,6 +68,20 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     }
   }
 
+  void _openEditDialog(int index, Medication med) {
+    showDialog(
+      context: context,
+      builder: (_) => EditMedicationDialog(
+        medication: med,
+        onSave: (updated) {
+          final meds = List<Medication>.from(widget.medications);
+          meds[index] = updated;
+          widget.onMedicationsChanged(meds);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -83,7 +96,6 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                 end: Alignment.bottomRight,
                 colors: [Color(0xFF1976D2), Color(0xFF0D47A1)],
               ),
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(0)),
             ),
             child: SafeArea(
               bottom: false,
@@ -100,7 +112,13 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 20),
                     child: Center(
-                      child: Text('Health Records', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        'Health Records',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
                 ],
@@ -113,17 +131,33 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Medications Section
-                const Text('MEDICATIONS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF), letterSpacing: 1.2)),
+                // Medications
+                const Text('MEDICATIONS',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF9CA3AF),
+                        letterSpacing: 1.2)),
                 const SizedBox(height: 10),
-                ...widget.medications.asMap().entries.map((e) => _buildMedCard(e.key, e.value)),
+                ...widget.medications
+                    .asMap()
+                    .entries
+                    .map((e) => _buildMedCard(e.key, e.value)),
 
                 const SizedBox(height: 20),
 
-                // Lab Tests Section
-                const Text('LAB TEST RESULTS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF), letterSpacing: 1.2)),
+                // Lab Tests
+                const Text('LAB TEST RESULTS',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF9CA3AF),
+                        letterSpacing: 1.2)),
                 const SizedBox(height: 10),
-                ...widget.labTests.asMap().entries.map((e) => _buildLabCard(e.key, e.value)),
+                ...widget.labTests
+                    .asMap()
+                    .entries
+                    .map((e) => _buildLabCard(e.key, e.value)),
               ],
             ),
           ),
@@ -132,8 +166,11 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     );
   }
 
+  // ── Med Card ──────────────────────────────────────────────────────────────
   Widget _buildMedCard(int index, Medication med) {
     final isExpanded = _expandedMed == index;
+    final scheduleOpen = _scheduleOpenMed == index;
+
     return GestureDetector(
       onTap: () => setState(() => _expandedMed = isExpanded ? null : index),
       child: Container(
@@ -141,59 +178,73 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ],
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
+              // Top row
               Row(
                 children: [
                   Container(
-                    width: 48, height: 48,
-                    decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(14)),
-                    child: const Icon(Icons.medication, color: Color(0xFF2563EB)),
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(14)),
+                    child:
+                        const Icon(Icons.medication, color: Color(0xFF2563EB)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(med.name, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF111418), fontSize: 15)),
-                        Text('${med.dosage} • ${med.frequency}', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                        Text(med.name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF111418),
+                                fontSize: 15)),
+                        Text('${med.dosage} • ${med.frequency}',
+                            style: const TextStyle(
+                                color: Color(0xFF6B7280), fontSize: 13)),
                       ],
                     ),
                   ),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _iconBtn(Icons.edit_outlined, const Color(0xFF2563EB), () {
-                        showDialog(
-                          context: context,
-                          builder: (_) => EditMedicationDialog(
-                            medication: med,
-                            onSave: (updated) {
-                              final meds = List<Medication>.from(widget.medications);
-                              meds[index] = updated;
-                              widget.onMedicationsChanged(meds);
-                            },
-                          ),
-                        );
-                      }),
-                      _iconBtn(Icons.delete_outline, const Color(0xFF2563EB), () {
-                        final meds = List<Medication>.from(widget.medications)..removeAt(index);
-                        if (_expandedMed == index) setState(() => _expandedMed = null);
+                      _iconBtn(Icons.edit_outlined, const Color(0xFF2563EB),
+                          () => _openEditDialog(index, med)),
+                      _iconBtn(Icons.delete_outline, const Color(0xFF2563EB),
+                          () {
+                        final meds = List<Medication>.from(widget.medications)
+                          ..removeAt(index);
+                        if (_expandedMed == index) {
+                          setState(() => _expandedMed = null);
+                        }
                         widget.onMedicationsChanged(meds);
                       }),
                     ],
                   ),
                 ],
               ),
+
+              // Expanded section
               if (isExpanded) ...[
                 const SizedBox(height: 14),
                 const Divider(color: Color(0xFFF3F4F6), height: 1),
                 const SizedBox(height: 14),
-                _expandedRow(Icons.access_time, 'Time', med.time),
+
+                _buildScheduleSection(index, med, scheduleOpen),
+                const SizedBox(height: 12),
+                _buildDurationSection(med),
                 const SizedBox(height: 10),
                 _expandedText('Purpose', med.purpose),
                 const SizedBox(height: 10),
@@ -206,16 +257,214 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     );
   }
 
+  // ── Schedule section ──────────────────────────────────────────────────────
+  Widget _buildScheduleSection(int medIndex, Medication med, bool isOpen) {
+    final hasSchedule = med.schedule != null && med.schedule!.isNotEmpty;
+
+    return GestureDetector(
+      onTap: () =>
+          setState(() => _scheduleOpenMed = isOpen ? null : medIndex),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.access_time, size: 16, color: Color(0xFF2563EB)),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Schedule',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                  if (!hasSchedule)
+                    Text(
+                      med.time.isNotEmpty ? med.time : '—',
+                      style: const TextStyle(
+                          fontSize: 14, color: Color(0xFF111418)),
+                    ),
+                ],
+              ),
+              const Spacer(),
+              if (hasSchedule)
+                AnimatedRotation(
+                  turns: isOpen ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.keyboard_arrow_down,
+                      color: Color(0xFF6B7280), size: 20),
+                ),
+            ],
+          ),
+          if (hasSchedule && isOpen) ...[
+            const SizedBox(height: 8),
+            ...med.schedule!.map((entry) => _buildDayRow(entry)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayRow(MedScheduleEntry entry) {
+    return Container(
+      margin: const EdgeInsets.only(left: 24, bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              entry.day,
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E3A5F)),
+            ),
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: entry.times.map((t) => _timeChip(t)).toList(),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2563EB),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '×${entry.times.length}',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timeChip(String time) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Text(time,
+          style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF1D4ED8),
+              fontWeight: FontWeight.w500)),
+    );
+  }
+
+  // ── Duration section ──────────────────────────────────────────────────────
+  Widget _buildDurationSection(Medication med) {
+    final isLifetime = med.isLifetime ?? false;
+
+    String fromStr =
+        med.startDate != null ? _formatDate(med.startDate!) : '—';
+    String toStr = isLifetime
+        ? 'Lifetime'
+        : (med.endDate != null ? _formatDate(med.endDate!) : '—');
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Duration',
+              style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('From',
+                        style:
+                            TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                    const SizedBox(height: 2),
+                    Text(fromStr,
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF111418))),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward,
+                  size: 16, color: Color(0xFF9CA3AF)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text('To',
+                        style:
+                            TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                    const SizedBox(height: 2),
+                    isLifetime
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Icon(Icons.all_inclusive,
+                                  size: 14, color: Color(0xFF2563EB)),
+                              SizedBox(width: 4),
+                              Text('Lifetime',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF2563EB))),
+                            ],
+                          )
+                        : Text(toStr,
+                            style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF111418))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  // ── Lab Card ──────────────────────────────────────────────────────────────
   Widget _buildLabCard(int index, LabTest lab) {
     final isExpanded = _expandedLab == index;
     return GestureDetector(
-      onTap: () => setState(() => _expandedLab = isExpanded ? null : index),
+      onTap: () =>
+          setState(() => _expandedLab = isExpanded ? null : index),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ],
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -224,17 +473,27 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
               Row(
                 children: [
                   Container(
-                    width: 48, height: 48,
-                    decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(14)),
-                    child: const Icon(Icons.description_outlined, color: Color(0xFF2563EB)),
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(14)),
+                    child: const Icon(Icons.description_outlined,
+                        color: Color(0xFF2563EB)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(lab.name, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF111418), fontSize: 15)),
-                        Text(lab.date, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                        Text(lab.name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF111418),
+                                fontSize: 15)),
+                        Text(lab.date,
+                            style: const TextStyle(
+                                color: Color(0xFF6B7280), fontSize: 13)),
                       ],
                     ),
                   ),
@@ -242,14 +501,25 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-                        child: const Text('File', style: TextStyle(color: Color(0xFF2563EB), fontSize: 11, fontWeight: FontWeight.w600)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8)),
+                        child: const Text('File',
+                            style: TextStyle(
+                                color: Color(0xFF2563EB),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600)),
                       ),
                       const SizedBox(width: 6),
-                      _iconBtn(Icons.delete_outline, const Color(0xFF2563EB), () {
-                        final labs = List<LabTest>.from(widget.labTests)..removeAt(index);
-                        if (_expandedLab == index) setState(() => _expandedLab = null);
+                      _iconBtn(Icons.delete_outline, const Color(0xFF2563EB),
+                          () {
+                        final labs = List<LabTest>.from(widget.labTests)
+                          ..removeAt(index);
+                        if (_expandedLab == index) {
+                          setState(() => _expandedLab = null);
+                        }
                         widget.onLabTestsChanged(labs);
                       }),
                     ],
@@ -267,13 +537,21 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                     onTap: () => _downloadFile(lab),
                     child: Container(
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(12)),
+                      decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(12)),
                       child: Row(
                         children: [
-                          const Icon(Icons.description_outlined, color: Color(0xFF1D4ED8), size: 18),
+                          const Icon(Icons.description_outlined,
+                              color: Color(0xFF1D4ED8), size: 18),
                           const SizedBox(width: 8),
-                          Expanded(child: Text(lab.fileName, style: const TextStyle(color: Color(0xFF1E3A5F), fontSize: 13))),
-                          const Icon(Icons.download_outlined, color: Color(0xFF1D4ED8), size: 18),
+                          Expanded(
+                              child: Text(lab.fileName,
+                                  style: const TextStyle(
+                                      color: Color(0xFF1E3A5F),
+                                      fontSize: 13))),
+                          const Icon(Icons.download_outlined,
+                              color: Color(0xFF1D4ED8), size: 18),
                         ],
                       ),
                     ),
@@ -281,12 +559,17 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                 else
                   Container(
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: const Color(0xFFF9FAFB), borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(12)),
                     child: const Row(
                       children: [
-                        Icon(Icons.description_outlined, color: Color(0xFF9CA3AF), size: 18),
+                        Icon(Icons.description_outlined,
+                            color: Color(0xFF9CA3AF), size: 18),
                         SizedBox(width: 8),
-                        Text('No file uploaded', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
+                        Text('No file uploaded',
+                            style: TextStyle(
+                                color: Color(0xFF9CA3AF), fontSize: 13)),
                       ],
                     ),
                   ),
@@ -298,32 +581,19 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     );
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
   Widget _iconBtn(IconData icon, Color color, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 34, height: 34,
+        width: 34,
+        height: 34,
         margin: const EdgeInsets.only(left: 4),
-        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(8)),
         child: Icon(icon, color: color, size: 18),
       ),
-    );
-  }
-
-  Widget _expandedRow(IconData icon, String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 16, color: const Color(0xFF2563EB)),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
-            Text(value, style: const TextStyle(fontSize: 14, color: Color(0xFF111418))),
-          ],
-        ),
-      ],
     );
   }
 
@@ -331,9 +601,11 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+        Text(label,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
         const SizedBox(height: 2),
-        Text(value, style: const TextStyle(fontSize: 14, color: Color(0xFF111418))),
+        Text(value,
+            style: const TextStyle(fontSize: 14, color: Color(0xFF111418))),
       ],
     );
   }

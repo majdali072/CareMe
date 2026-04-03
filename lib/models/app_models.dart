@@ -1,3 +1,18 @@
+class MedScheduleEntry {
+  final String day;
+  final List<String> times;
+
+  MedScheduleEntry({required this.day, required this.times});
+
+  factory MedScheduleEntry.fromJson(Map<String, dynamic> json) =>
+      MedScheduleEntry(
+        day: json['day'] as String,
+        times: List<String>.from(json['times'] ?? []),
+      );
+
+  Map<String, dynamic> toJson() => {'day': day, 'times': times};
+}
+
 class Medication {
   final String? id;
   final String name;
@@ -6,6 +21,10 @@ class Medication {
   final String time;
   final String purpose;
   final String sideEffects;
+  final List<MedScheduleEntry>? schedule;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final bool? isLifetime;
 
   Medication({
     this.id,
@@ -15,6 +34,10 @@ class Medication {
     required this.time,
     required this.purpose,
     required this.sideEffects,
+    this.schedule,
+    this.startDate,
+    this.endDate,
+    this.isLifetime,
   });
 
   factory Medication.fromJson(Map<String, dynamic> json) {
@@ -26,6 +49,16 @@ class Medication {
       time: json['time'] ?? '',
       purpose: json['purpose'] ?? '',
       sideEffects: json['sideEffects'] ?? '',
+      schedule: (json['schedule'] as List<dynamic>?)
+          ?.map((e) => MedScheduleEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      startDate: json['startDate'] != null
+          ? DateTime.parse(json['startDate'] as String)
+          : null,
+      endDate: json['endDate'] != null
+          ? DateTime.parse(json['endDate'] as String)
+          : null,
+      isLifetime: json['isLifetime'] as bool? ?? false,
     );
   }
 
@@ -36,6 +69,10 @@ class Medication {
         'time': time,
         'purpose': purpose,
         'sideEffects': sideEffects,
+        'schedule': schedule?.map((e) => e.toJson()).toList(),
+        'startDate': startDate?.toIso8601String(),
+        'endDate': endDate?.toIso8601String(),
+        'isLifetime': isLifetime ?? false,
       };
 
   Medication copyWith({
@@ -46,6 +83,10 @@ class Medication {
     String? time,
     String? purpose,
     String? sideEffects,
+    List<MedScheduleEntry>? schedule,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool? isLifetime,
   }) {
     return Medication(
       id: id ?? this.id,
@@ -55,6 +96,10 @@ class Medication {
       time: time ?? this.time,
       purpose: purpose ?? this.purpose,
       sideEffects: sideEffects ?? this.sideEffects,
+      schedule: schedule ?? this.schedule,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      isLifetime: isLifetime ?? this.isLifetime,
     );
   }
 }

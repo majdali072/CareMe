@@ -142,6 +142,20 @@ class _AppRootState extends State<AppRoot> {
     );
   }
 
+  bool _scheduleChanged(List<MedScheduleEntry>? a, List<MedScheduleEntry>? b) {
+    if (a == null && b == null) return false;
+    if (a == null || b == null) return true;
+    if (a.length != b.length) return true;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].day != b[i].day) return true;
+      if (a[i].times.length != b[i].times.length) return true;
+      for (int j = 0; j < a[i].times.length; j++) {
+        if (a[i].times[j] != b[i].times[j]) return true;
+      }
+    }
+    return false;
+  }
+
   void _handleMedicationsChanged(List<Medication> updated) async {
     // Find which medication was removed
     final removedMeds = _medications.where(
@@ -167,7 +181,11 @@ class _AppRootState extends State<AppRoot> {
             orig.frequency != u.frequency ||
             orig.time != u.time ||
             orig.purpose != u.purpose ||
-            orig.sideEffects != u.sideEffects) {
+            orig.sideEffects != u.sideEffects ||
+            orig.startDate != u.startDate ||
+            orig.endDate != u.endDate ||
+            orig.isLifetime != u.isLifetime ||
+            _scheduleChanged(orig.schedule, u.schedule)) {
           try {
             await ApiService.updateMedication(u.id!, u);
           } catch (e) {
