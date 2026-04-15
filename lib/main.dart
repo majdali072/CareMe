@@ -15,8 +15,11 @@ import 'widgets/add_lab_test_dialog.dart';
 import 'widgets/add_schedule_dialog.dart';
 import 'models/app_models.dart';
 import 'services/api_service.dart';
+import 'services/notification_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.init();
   runApp(const CareMeApp());
 }
 
@@ -54,10 +57,10 @@ class _AppRootState extends State<AppRoot> {
   List<LabTest> _labTests = [];
   List<Appointment> _appointments = [];
 
-  void _handleLogin(String name, String email) {
+  void _handleLogin(String name, String email, bool isAdmin) {
     setState(() {
       _userName = name;
-      _isAdmin = email.toLowerCase().endsWith('@admin.com');
+      _isAdmin = isAdmin;
       _currentPage = _isAdmin ? 'controller' : 'home';
       _isLoggedIn = true;
     });
@@ -72,6 +75,7 @@ class _AppRootState extends State<AppRoot> {
         _medications = meds;
         _labTests = labs;
       });
+      await NotificationService.rescheduleAll(meds);
     } catch (e) {
       // Data will just be empty if server is unreachable
     }
@@ -101,6 +105,7 @@ class _AppRootState extends State<AppRoot> {
           try {
             final saved = await ApiService.addMedication(med);
             setState(() => _medications.add(saved));
+            await NotificationService.scheduleMedication(saved);
           } catch (e) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -168,6 +173,7 @@ class _AppRootState extends State<AppRoot> {
       } catch (e) {
         // ignore
       }
+      await NotificationService.cancelMedication(med.id!);
     }
 
     // Find which medication was updated (edited)
@@ -191,6 +197,7 @@ class _AppRootState extends State<AppRoot> {
           } catch (e) {
             // ignore
           }
+          await NotificationService.scheduleMedication(u);
         }
       }
     }

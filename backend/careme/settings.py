@@ -12,9 +12,10 @@ if os.path.exists(_env_path):
             if line and not line.startswith('#') and '=' in line:
                 key, value = line.split('=', 1)
                 os.environ.setdefault(key.strip(), value.strip())
-SECRET_KEY = 'django-insecure-change-me-in-production-careme-2024'
-DEBUG = True
-ALLOWED_HOSTS = ['*']
+
+SECRET_KEY = os.environ.get('SECRET_KEY', 'fallback-dev-key-change-me')
+DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
@@ -25,8 +26,11 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'api.middleware.HttpsEnforcementMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'api.middleware.RateLimitMiddleware',
+    'api.middleware.AuditLogMiddleware',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -40,12 +44,12 @@ REST_FRAMEWORK = {
 }
 
 # MongoDB
-MONGO_URI = 'mongodb://localhost:27017'
-MONGO_DB_NAME = 'careme_db'
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb://localhost:27017')
+MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'careme_db')
 
 # JWT
-JWT_SECRET = SECRET_KEY
-JWT_EXPIRY_HOURS = 72
+JWT_SECRET = os.environ.get('JWT_SECRET', SECRET_KEY)
+JWT_EXPIRY_HOURS = int(os.environ.get('JWT_EXPIRY_HOURS', '72'))
 
 DATABASES = {}
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -60,6 +64,10 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('EMAIL_HOST_USER', 'noreply@careme.app')
+
+# Field-level encryption for health data
+# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+FIELD_ENCRYPTION_KEY = os.environ.get('FIELD_ENCRYPTION_KEY', '')
 
 # Google Gemini API
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')

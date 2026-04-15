@@ -29,6 +29,14 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Google Maps API key is injected into AndroidManifest.xml via the
+        // ${MAPS_API_KEY} manifest placeholder. Override at runtime with:
+        //   flutter run --dart-define=GOOGLE_MAPS_API_KEY=xxx \
+        //               -Pmaps_api_key=xxx
+        manifestPlaceholders["MAPS_API_KEY"] =
+            (project.findProperty("maps_api_key") as String?)
+                ?: "AIzaSyDxH73xrf5oJCGEzJk5R2VAg3NvbpraICQ"
     }
 
     buildTypes {

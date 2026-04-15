@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import re
 import random
 import base64
@@ -18,7 +19,12 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from django.core.mail import send_mail
 from .db import get_db
-from .auth_utils import hash_password, check_password, create_token, login_required
+from .auth_utils import (
+    hash_password, check_password, create_token, login_required, admin_required,
+    validate_password_strength, create_refresh_token, verify_refresh_token,
+    revoke_refresh_token, revoke_all_refresh_tokens,
+)
+from .encryption import encrypt_document, decrypt_document
 
 # ---------- Gemini setup ----------
 
@@ -35,8 +41,59 @@ SYSTEM_PROMPT = (
     "'I can only help with health and medical-related questions. Please ask me something about your health!' "
     "Do not answer questions about politics, entertainment, coding, math, history, or any non-medical topic. "
     "Be concise, caring, and accurate. If you are unsure about medical advice, recommend consulting a doctor. "
-    "Do not diagnose conditions. Keep responses short and helpful."
+    "Do not diagnose conditions. Keep responses short and helpful. "
+    "When the user asks for a doctor or pharmacy recommendation, ONLY suggest from the "
+    "'Nearby doctors' or 'Nearby pharmacies' list provided in the user context below, "
+    "prefer the closest ones, and include name, address, phone, and distance if shown. "
+    "If no nearby list is available, tell the user to set their address in the account screen."
 )
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    r = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _nearby_contacts(db, collection, user_lat, user_lng, limit=5, max_km=50.0):
+    docs = list(db[collection].find())
+    scored = []
+    for d in docs:
+        lat = d.get('latitude')
+        lng = d.get('longitude')
+        if user_lat is not None and user_lng is not None and lat is not None and lng is not None:
+            try:
+                dist = _haversine_km(float(user_lat), float(user_lng), float(lat), float(lng))
+            except (TypeError, ValueError):
+                dist = None
+        else:
+            dist = None
+        scored.append((dist, d))
+
+    if user_lat is not None and user_lng is not None:
+        with_dist = [(dist, d) for dist, d in scored if dist is not None and dist <= max_km]
+        with_dist.sort(key=lambda x: x[0])
+        picked = with_dist[:limit]
+    else:
+        picked = [(None, d) for d in docs[:limit]]
+
+    lines = []
+    for dist, d in picked:
+        name = d.get('name', '')
+        addr = d.get('address', '')
+        phone = d.get('phone', '')
+        parts = [name]
+        if addr:
+            parts.append(addr)
+        if phone:
+            parts.append(f"tel {phone}")
+        if dist is not None:
+            parts.append(f"{dist:.1f} km away")
+        lines.append(' — '.join(parts))
+    return lines
 
 # ---------- helpers ----------
 
@@ -70,8 +127,11 @@ def register(request):
         return JsonResponse({'error': 'Name, email, and password are required'}, status=400)
     if not _valid_email(email):
         return JsonResponse({'error': 'Invalid email format'}, status=400)
-    if len(password) < 6:
-        return JsonResponse({'error': 'Password must be at least 6 characters'}, status=400)
+
+    # Strong password policy
+    valid, error = validate_password_strength(password)
+    if not valid:
+        return JsonResponse({'error': error}, status=400)
 
     db = get_db()
     if db.users.find_one({'email': email}):
@@ -81,14 +141,19 @@ def register(request):
         'name': name,
         'email': email,
         'password': hash_password(password),
+        'created_at': datetime.utcnow(),
+        # Admin flag is seeded via scripts/seed_admins.py; never via self-register.
+        'is_admin': False,
     }
     result = db.users.insert_one(user)
     user_id = str(result.inserted_id)
-    token = create_token(user_id, email)
+    access_token = create_token(user_id, email)
+    refresh_token = create_refresh_token(user_id, email)
 
     return JsonResponse({
-        'token': token,
-        'user': {'id': user_id, 'name': name, 'email': email},
+        'token': access_token,
+        'refresh_token': refresh_token,
+        'user': {'id': user_id, 'name': name, 'email': email, 'is_admin': False},
     }, status=201)
 
 
@@ -107,13 +172,67 @@ def login(request):
     if not user or not check_password(password, user['password']):
         return JsonResponse({'error': 'Invalid email or password'}, status=401)
 
+    if user.get('deactivated'):
+        return JsonResponse(
+            {'error': 'This account has been deactivated. Contact support to reactivate.'},
+            status=403,
+        )
+
     user_id = str(user['_id'])
-    token = create_token(user_id, email)
+    access_token = create_token(user_id, email)
+    refresh_token = create_refresh_token(user_id, email)
 
     return JsonResponse({
-        'token': token,
-        'user': {'id': user_id, 'name': user['name'], 'email': email},
+        'token': access_token,
+        'refresh_token': refresh_token,
+        'user': {
+            'id': user_id,
+            'name': user['name'],
+            'email': email,
+            'is_admin': bool(user.get('is_admin', False)),
+        },
     })
+
+
+# ---------- Token Refresh ----------
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def refresh_token_view(request):
+    """Exchange a valid refresh token for a new access token."""
+    data = _parse_body(request)
+    refresh_token = data.get('refresh_token', '')
+
+    if not refresh_token:
+        return JsonResponse({'error': 'Refresh token is required'}, status=400)
+
+    user_info = verify_refresh_token(refresh_token)
+    if not user_info:
+        return JsonResponse({'error': 'Invalid or expired refresh token'}, status=401)
+
+    # Rotate: revoke old refresh token, issue new pair
+    revoke_refresh_token(refresh_token)
+    new_access_token = create_token(user_info['user_id'], user_info['email'])
+    new_refresh_token = create_refresh_token(user_info['user_id'], user_info['email'])
+
+    return JsonResponse({
+        'token': new_access_token,
+        'refresh_token': new_refresh_token,
+    })
+
+
+# ---------- Logout ----------
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def logout(request):
+    """Revoke the refresh token to log out."""
+    data = _parse_body(request)
+    refresh_token = data.get('refresh_token', '')
+    if refresh_token:
+        revoke_refresh_token(refresh_token)
+    return JsonResponse({'message': 'Logged out successfully'})
 
 
 # ---------- OTP ----------
@@ -193,23 +312,20 @@ def change_password(request):
     data = _parse_body(request)
     new_password = data.get('new_password') or ''
 
-    if len(new_password) < 8:
-        return JsonResponse({'error': 'Password must be at least 8 characters'}, status=400)
-    if not re.search(r'[A-Z]', new_password):
-        return JsonResponse({'error': 'Password must contain an uppercase letter'}, status=400)
-    if not re.search(r'[a-z]', new_password):
-        return JsonResponse({'error': 'Password must contain a lowercase letter'}, status=400)
-    if not re.search(r'[0-9]', new_password):
-        return JsonResponse({'error': 'Password must contain a number'}, status=400)
-    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', new_password):
-        return JsonResponse({'error': 'Password must contain a special character'}, status=400)
+    valid, error = validate_password_strength(new_password)
+    if not valid:
+        return JsonResponse({'error': error}, status=400)
 
     db = get_db()
     db.users.update_one(
         {'_id': ObjectId(request.user_id)},
         {'$set': {'password': hash_password(new_password)}},
     )
-    return JsonResponse({'message': 'Password changed successfully'})
+
+    # Revoke all refresh tokens on password change for security
+    revoke_all_refresh_tokens(request.user_id)
+
+    return JsonResponse({'message': 'Password changed successfully. Please log in again.'})
 
 
 # ---------- User Profile ----------
@@ -223,6 +339,9 @@ def profile(request):
     if not user:
         return JsonResponse({'error': 'User not found'}, status=404)
 
+    # Decrypt sensitive fields
+    user = decrypt_document('users', user)
+
     if request.method == 'GET':
         return JsonResponse({
             'id': str(user['_id']),
@@ -231,19 +350,24 @@ def profile(request):
             'phone': user.get('phone', ''),
             'dateOfBirth': user.get('dateOfBirth', ''),
             'address': user.get('address', ''),
+            'latitude': user.get('latitude'),
+            'longitude': user.get('longitude'),
         })
 
     # PUT - update profile
     data = _parse_body(request)
     updates = {}
-    for field in ('name', 'phone', 'dateOfBirth', 'address'):
+    for field in ('name', 'phone', 'dateOfBirth', 'address', 'latitude', 'longitude'):
         if field in data:
             updates[field] = data[field]
 
     if updates:
+        # Encrypt sensitive fields before storing
+        updates = encrypt_document('users', updates)
         db.users.update_one({'_id': ObjectId(request.user_id)}, {'$set': updates})
 
     updated = db.users.find_one({'_id': ObjectId(request.user_id)})
+    updated = decrypt_document('users', updated)
     return JsonResponse({
         'id': str(updated['_id']),
         'name': updated.get('name', ''),
@@ -251,6 +375,8 @@ def profile(request):
         'phone': updated.get('phone', ''),
         'dateOfBirth': updated.get('dateOfBirth', ''),
         'address': updated.get('address', ''),
+        'latitude': updated.get('latitude'),
+        'longitude': updated.get('longitude'),
     })
 
 
@@ -264,7 +390,10 @@ def medications(request):
 
     if request.method == 'GET':
         meds = list(db.medications.find({'user_id': request.user_id}))
-        return JsonResponse([_str_id(m) for m in meds], safe=False)
+        return JsonResponse(
+            [_str_id(decrypt_document('medications', m)) for m in meds],
+            safe=False,
+        )
 
     # POST - add new medication
     data = _parse_body(request)
@@ -285,9 +414,13 @@ def medications(request):
     if not med['name']:
         return JsonResponse({'error': 'Medication name is required'}, status=400)
 
+    # Encrypt sensitive fields before storing
+    med = encrypt_document('medications', med)
     result = db.medications.insert_one(med)
     med['id'] = str(result.inserted_id)
     del med['_id']
+    # Decrypt for response
+    med = decrypt_document('medications', med)
     return JsonResponse(med, status=201)
 
 
@@ -319,10 +452,11 @@ def medication_detail(request, med_id):
             updates[field] = data[field]
 
     if updates:
+        updates = encrypt_document('medications', updates)
         db.medications.update_one({'_id': obj_id}, {'$set': updates})
 
     updated = db.medications.find_one({'_id': obj_id})
-    return JsonResponse(_str_id(updated))
+    return JsonResponse(_str_id(decrypt_document('medications', updated)))
 
 
 # ---------- Lab Tests ----------
@@ -335,7 +469,10 @@ def lab_tests(request):
 
     if request.method == 'GET':
         labs = list(db.lab_tests.find({'user_id': request.user_id}))
-        return JsonResponse([_str_id(l) for l in labs], safe=False)
+        return JsonResponse(
+            [_str_id(decrypt_document('lab_tests', l)) for l in labs],
+            safe=False,
+        )
 
     # POST - supports both JSON and multipart form data (file upload)
     content_type = request.content_type or ''
@@ -397,9 +534,12 @@ def lab_tests(request):
     if not lab['name']:
         return JsonResponse({'error': 'Lab test name is required'}, status=400)
 
+    # Encrypt sensitive fields before storing
+    lab = encrypt_document('lab_tests', lab)
     result = db.lab_tests.insert_one(lab)
     lab['id'] = str(result.inserted_id)
     del lab['_id']
+    lab = decrypt_document('lab_tests', lab)
     return JsonResponse(lab, status=201)
 
 
@@ -455,31 +595,118 @@ def lab_test_file(request, lab_id):
     return response
 
 
-# ---------- Delete Account ----------
+# ---------- Doctors & Pharmacies (admin-managed directory) ----------
+
+def _contact_from_doc(doc):
+    return {
+        'id': str(doc['_id']),
+        'name': doc.get('name', ''),
+        'address': doc.get('address', ''),
+        'phone': doc.get('phone', ''),
+        'latitude': doc.get('latitude'),
+        'longitude': doc.get('longitude'),
+    }
+
+
+def _contacts_list_create(request, collection_name):
+    db = get_db()
+    coll = db[collection_name]
+
+    if request.method == 'GET':
+        docs = list(coll.find().sort('name', 1))
+        return JsonResponse({'items': [_contact_from_doc(d) for d in docs]})
+
+    # POST — admin only for mutations
+    data = _parse_body(request)
+    name = (data.get('name') or '').strip()
+    address = (data.get('address') or '').strip()
+    phone = (data.get('phone') or '').strip()
+    if not name or not address or not phone:
+        return JsonResponse({'error': 'name, address, and phone are required'}, status=400)
+
+    doc = {
+        'name': name,
+        'address': address,
+        'phone': phone,
+        'latitude': data.get('latitude'),
+        'longitude': data.get('longitude'),
+        'created_at': datetime.utcnow(),
+    }
+    result = coll.insert_one(doc)
+    doc['_id'] = result.inserted_id
+    return JsonResponse(_contact_from_doc(doc), status=201)
+
+
+def _contacts_detail(request, collection_name, item_id):
+    db = get_db()
+    coll = db[collection_name]
+    try:
+        obj_id = ObjectId(item_id)
+    except Exception:
+        return JsonResponse({'error': 'Invalid id'}, status=400)
+
+    if request.method == 'DELETE':
+        result = coll.delete_one({'_id': obj_id})
+        if result.deleted_count == 0:
+            return JsonResponse({'error': 'Not found'}, status=404)
+        return JsonResponse({'message': 'Deleted'})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def doctors(request):
+    if request.method == 'POST':
+        return admin_required(lambda r: _contacts_list_create(r, 'doctors'))(request)
+    return login_required(lambda r: _contacts_list_create(r, 'doctors'))(request)
+
+
+@csrf_exempt
+@admin_required
+@require_http_methods(['DELETE'])
+def doctor_detail(request, doctor_id):
+    return _contacts_detail(request, 'doctors', doctor_id)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def pharmacies(request):
+    if request.method == 'POST':
+        return admin_required(lambda r: _contacts_list_create(r, 'pharmacies'))(request)
+    return login_required(lambda r: _contacts_list_create(r, 'pharmacies'))(request)
+
+
+@csrf_exempt
+@admin_required
+@require_http_methods(['DELETE'])
+def pharmacy_detail(request, pharmacy_id):
+    return _contacts_detail(request, 'pharmacies', pharmacy_id)
+
+
+# ---------- Deactivate Account ----------
 
 @csrf_exempt
 @login_required
-@require_http_methods(['DELETE'])
-def delete_account(request):
+@require_http_methods(['POST'])
+def deactivate_account(request):
+    """Soft-disable the account. Data is preserved; login is blocked until
+    the user is reactivated by support."""
     db = get_db()
     user_id = request.user_id
 
-    # Delete all user files from GridFS
-    fs = GridFS(db)
-    labs = list(db.lab_tests.find({'user_id': user_id}))
-    for lab in labs:
-        if lab.get('fileId'):
-            try:
-                fs.delete(ObjectId(lab['fileId']))
-            except Exception:
-                pass
+    db.users.update_one(
+        {'_id': ObjectId(user_id)},
+        {'$set': {
+            'deactivated': True,
+            'deactivated_at': datetime.utcnow(),
+        }},
+    )
 
-    # Delete all user data
-    db.medications.delete_many({'user_id': user_id})
-    db.lab_tests.delete_many({'user_id': user_id})
-    db.users.delete_one({'_id': ObjectId(user_id)})
+    # Force sign-out everywhere: revoke all refresh tokens.
+    revoke_all_refresh_tokens(user_id)
 
-    return JsonResponse({'message': 'Account deleted'})
+    return JsonResponse({'message': 'Account deactivated'})
 
 
 # ---------- Export User Data ----------
@@ -493,8 +720,9 @@ def export_data(request):
     user = db.users.find_one({'_id': ObjectId(user_id)})
     user_name = user.get('name', 'User') if user else 'User'
 
-    # Get medications from DB
+    # Get medications from DB and decrypt
     meds = list(db.medications.find({'user_id': user_id}))
+    meds = [decrypt_document('medications', m) for m in meds]
 
     # Get appointments from request body (stored client-side)
     data = _parse_body(request)
@@ -604,9 +832,11 @@ def chat(request):
 
     db = get_db()
 
-    # Fetch user context for personalized responses
+    # Fetch user context for personalized responses (decrypt for AI context)
     meds = list(db.medications.find({'user_id': request.user_id}))
+    meds = [decrypt_document('medications', m) for m in meds]
     labs = list(db.lab_tests.find({'user_id': request.user_id}))
+    labs = [decrypt_document('lab_tests', l) for l in labs]
     user = db.users.find_one({'_id': ObjectId(request.user_id)})
 
     context_parts = [SYSTEM_PROMPT]
@@ -621,6 +851,25 @@ def chat(request):
     if labs:
         lab_list = ', '.join(f"{l.get('name', '')} on {l.get('date', '')}" for l in labs)
         context_parts.append(f"\nUser's recent lab tests: {lab_list}")
+
+    user_lat = user.get('latitude') if user else None
+    user_lng = user.get('longitude') if user else None
+    user_addr = user.get('address') if user else None
+    if user_addr:
+        context_parts.append(f"\nUser's address: {user_addr}")
+
+    doctors_nearby = _nearby_contacts(db, 'doctors', user_lat, user_lng)
+    pharmacies_nearby = _nearby_contacts(db, 'pharmacies', user_lat, user_lng)
+    if doctors_nearby:
+        context_parts.append(
+            "\nNearby doctors (admin-curated, sorted by proximity):\n- "
+            + "\n- ".join(doctors_nearby)
+        )
+    if pharmacies_nearby:
+        context_parts.append(
+            "\nNearby pharmacies (admin-curated, sorted by proximity):\n- "
+            + "\n- ".join(pharmacies_nearby)
+        )
 
     system_context = ''.join(context_parts)
 

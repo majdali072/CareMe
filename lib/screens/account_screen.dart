@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../models/app_models.dart';
 import '../services/api_service.dart';
+import '../widgets/location_picker.dart';
 import 'otp_verification_screen.dart';
 import 'change_password_screen.dart';
 
@@ -112,6 +113,8 @@ class _AccountScreenState extends State<AccountScreen> {
   String _countryFlag = '\u{1F1FA}\u{1F1F8}';
   String _dateOfBirth = '';
   String _address = '';
+  double? _latitude;
+  double? _longitude;
   File? _profileImage;
 
   @override
@@ -216,6 +219,8 @@ class _AccountScreenState extends State<AccountScreen> {
         _phone = savedPhone;
         _dateOfBirth = data['dateOfBirth'] ?? '';
         _address = data['address'] ?? '';
+        _latitude = (data['latitude'] as num?)?.toDouble();
+        _longitude = (data['longitude'] as num?)?.toDouble();
         _isLoading = false;
       });
     } catch (e) {
@@ -527,7 +532,13 @@ class _AccountScreenState extends State<AccountScreen> {
     final nameCtrl = TextEditingController(text: _fullName);
     final phoneCtrl = TextEditingController(text: _localNumber());
     final dobCtrl = TextEditingController(text: _dateOfBirth);
-    final addrCtrl = TextEditingController(text: _address);
+    SelectedLocation? draftLocation = _address.isEmpty
+        ? null
+        : SelectedLocation.fromParts(
+            address: _address,
+            latitude: _latitude,
+            longitude: _longitude,
+          );
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 100),
@@ -620,7 +631,18 @@ class _AccountScreenState extends State<AccountScreen> {
                   _buildInfoRow(Icons.mail_outline, 'Email', _email),
                   _buildPhoneField(phoneCtrl),
                   _buildDatePickerField('Date of Birth', dobCtrl),
-                  _buildEditField('Address', addrCtrl),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    child: StatefulBuilder(
+                      builder: (ctx, setLocalState) => LocationAddressField(
+                        label: 'Address',
+                        value: draftLocation,
+                        onChanged: (loc) =>
+                            setLocalState(() => draftLocation = loc),
+                      ),
+                    ),
+                  ),
                 ]),
                 const SizedBox(height: 16),
                 SizedBox(
@@ -638,13 +660,17 @@ class _AccountScreenState extends State<AccountScreen> {
                                 name: nameCtrl.text,
                                 phone: fullPhone,
                                 dateOfBirth: dobCtrl.text,
-                                address: addrCtrl.text,
+                                address: draftLocation?.address ?? '',
+                                latitude: draftLocation?.latitude,
+                                longitude: draftLocation?.longitude,
                               );
                               setState(() {
                                 _fullName = nameCtrl.text;
                                 _phone = fullPhone;
                                 _dateOfBirth = dobCtrl.text;
-                                _address = addrCtrl.text;
+                                _address = draftLocation?.address ?? '';
+                                _latitude = draftLocation?.latitude;
+                                _longitude = draftLocation?.longitude;
                                 _showEditProfile = false;
                                 _isSaving = false;
                               });
@@ -881,8 +907,8 @@ class _AccountScreenState extends State<AccountScreen> {
                         'Yes. Your data is encrypted in transit and at rest. We never sell or share your personal health information.'),
                     _faqItem('How do I change my password?',
                         'Go to Settings > Security & Privacy > Change Password. You will need to verify your identity via email OTP first.'),
-                    _faqItem('How do I delete my account?',
-                        'Go to Settings > Security & Privacy > Delete Account. This action is permanent and cannot be undone.'),
+                    _faqItem('How do I deactivate my account?',
+                        'Go to Settings > Security & Privacy > Deactivate Account. Your data is preserved and you can contact support to reactivate anytime.'),
                     _faqItem('Can I export my data?',
                         'Yes. Go to Settings > Security & Privacy > Download My Data to export your health records as a PDF.'),
                     const Divider(height: 32),
@@ -1101,7 +1127,7 @@ Contact: support@careme.app''';
     );
   }
 
-  void _confirmDeleteAccount() {
+  void _confirmDeactivateAccount() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1111,12 +1137,12 @@ Contact: support@careme.app''';
             Icon(Icons.warning_amber_rounded,
                 color: Color(0xFFDC2626), size: 28),
             SizedBox(width: 10),
-            Text('Delete Account',
+            Text('Deactivate Account',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
         content: const Text(
-          'This will permanently delete your account and all your data including medications, lab tests, and uploaded files.\n\nThis action cannot be undone.',
+          'This will deactivate your account and sign you out. Your data (medications, lab tests, files) is preserved and not deleted.\n\nYou will not be able to sign in again until you contact support to reactivate your account.',
           style: TextStyle(fontSize: 14, color: Color(0xFF4B5563)),
         ),
         actions: [
@@ -1129,18 +1155,18 @@ Contact: support@careme.app''';
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await ApiService.deleteAccount();
+                await ApiService.deactivateAccount();
                 if (mounted) {
                   widget.onLogout();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content: Text('Account deleted successfully')),
+                        content: Text('Account deactivated')),
                   );
                 }
               } catch (e) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to delete account: $e')),
+                    SnackBar(content: Text('Failed to deactivate account: $e')),
                   );
                 }
               }
@@ -1151,7 +1177,7 @@ Contact: support@careme.app''';
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Delete Forever'),
+            child: const Text('Deactivate'),
           ),
         ],
       ),
@@ -1232,9 +1258,9 @@ Contact: support@careme.app''';
                   _buildNavRow(
                       Icons.shield_outlined,
                       const Color(0xFFDC2626),
-                      'Delete Account',
-                      'Permanently remove account',
-                      _confirmDeleteAccount),
+                      'Deactivate Account',
+                      'Disable account; data is preserved',
+                      _confirmDeactivateAccount),
                 ]),
               ],
             ),

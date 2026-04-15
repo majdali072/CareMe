@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/app_models.dart';
+import '../services/google_calendar_service.dart';
 
 class AddScheduleDialog extends StatefulWidget {
   final void Function(Appointment) onAdd;
@@ -17,24 +18,58 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
   final _locationCtrl = TextEditingController();
   final _dateCtrl = TextEditingController();
   final _timeCtrl = TextEditingController();
+  DateTime? _pickedDate;
+  TimeOfDay? _pickedTime;
   String? _alertType;
+  bool _submitting = false;
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_titleCtrl.text.isEmpty || _typeCtrl.text.isEmpty || _dateCtrl.text.isEmpty || _timeCtrl.text.isEmpty) return;
+    if (_pickedDate == null || _pickedTime == null) return;
     // Random 20% conflict
     if (DateTime.now().millisecond % 5 == 0) {
       setState(() => _alertType = 'conflict');
       return;
     }
+
+    setState(() => _submitting = true);
+
+    final start = DateTime(
+      _pickedDate!.year,
+      _pickedDate!.month,
+      _pickedDate!.day,
+      _pickedTime!.hour,
+      _pickedTime!.minute,
+    );
+
+    final description = [
+      if (_typeCtrl.text.isNotEmpty) 'Type: ${_typeCtrl.text}',
+      if (_doctorCtrl.text.isNotEmpty) 'Doctor: ${_doctorCtrl.text}',
+      'Created via CareMe',
+    ].join('\n');
+
+    final eventId = await GoogleCalendarService.createEvent(
+      title: _titleCtrl.text,
+      description: description,
+      location: _locationCtrl.text,
+      start: start,
+    );
+
     widget.onAdd(Appointment(
-      date: int.tryParse(_dateCtrl.text.split('-').last) ?? 1,
+      date: _pickedDate!.day,
       title: _titleCtrl.text,
       time: _timeCtrl.text,
       type: _typeCtrl.text,
       location: _locationCtrl.text,
     ));
-    setState(() => _alertType = 'success');
-    Future.delayed(const Duration(milliseconds: 1500), () { if (mounted) Navigator.pop(context); });
+
+    if (!mounted) return;
+    setState(() {
+      _submitting = false;
+      _alertType = eventId != null ? 'success' : 'added_no_gcal';
+    });
+
+    Future.delayed(const Duration(milliseconds: 1800), () { if (mounted) Navigator.pop(context); });
   }
 
   @override
@@ -74,21 +109,25 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                     _timePickerField('Time', _timeCtrl),
                     const SizedBox(height: 14),
                     if (_alertType == 'success')
-                      _alert(true, 'Appointment added successfully!'),
+                      _alert(true, 'Appointment added & synced to Google Calendar!'),
+                    if (_alertType == 'added_no_gcal')
+                      _alert(false, 'Appointment added. Google Calendar sync failed — sign in with Google to sync.'),
                     if (_alertType == 'conflict')
                       _alert(false, 'Warning: Time conflict detected with another appointment.'),
                     const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _submit,
+                        onPressed: _submitting ? null : _submit,
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           backgroundColor: const Color(0xFF2563EB),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: const Text('Add Appointment', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        child: _submitting
+                            ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Text('Add Appointment', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],
@@ -138,6 +177,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
             );
             if (picked != null) {
               ctrl.text = DateFormat('yyyy-MM-dd').format(picked);
+              _pickedDate = picked;
             }
           },
           decoration: InputDecoration(
@@ -169,6 +209,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
             );
             if (picked != null) {
               ctrl.text = picked.format(context);
+              _pickedTime = picked;
             }
           },
           decoration: InputDecoration(

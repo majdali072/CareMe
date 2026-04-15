@@ -4,7 +4,7 @@ import '../services/api_service.dart';
 import 'otp_verification_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  final void Function(String name, String email) onLogin;
+  final void Function(String name, String email, bool isAdmin) onLogin;
   const LoginScreen({super.key, required this.onLogin});
 
   @override
@@ -82,7 +82,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         final userName = result['user']['name'] as String;
         final userEmail = result['user']['email'] as String;
-        // OTP verification on sign in/register
+        final isAdmin = result['user']['is_admin'] == true;
+        // OTP verification temporarily disabled — sign in directly.
+        widget.onLogin(userName, userEmail, isAdmin);
         // Navigator.push(
         //   context,
         //   MaterialPageRoute(
@@ -96,7 +98,6 @@ class _LoginScreenState extends State<LoginScreen> {
         //     ),
         //   ),
         // );
-        widget.onLogin(userName, userEmail);
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -127,23 +128,25 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       final name = account.displayName ?? account.email.split('@').first;
       final email = account.email;
-      // OTP verification on Google sign-in
-      // if (mounted) {
-      //   Navigator.push(
-      //     context,
-      //     MaterialPageRoute(
-      //       builder: (_) => OTPVerificationScreen(
-      //         verificationType: 'email',
-      //         contactInfo: email,
-      //         onVerify: (otp) {
-      //           Navigator.pop(context);
-      //           widget.onLogin(name, email);
-      //         },
-      //       ),
-      //     ),
-      //   );
-      // }
-      widget.onLogin(name, email);
+      if (mounted) {
+        // OTP verification temporarily disabled — sign in directly.
+        // Google sign-in never grants admin access; admins must sign in via
+        // password credentials provisioned by scripts/seed_admins.py.
+        widget.onLogin(name, email, false);
+        // Navigator.push(
+        //   context,
+        //   MaterialPageRoute(
+        //     builder: (_) => OTPVerificationScreen(
+        //       verificationType: 'email',
+        //       contactInfo: email,
+        //       onVerify: (otp) {
+        //         Navigator.pop(context);
+        //         widget.onLogin(name, email);
+        //       },
+        //     ),
+        //   ),
+        // );
+      }
     } catch (e) {
       debugPrint('Google Sign-In Error: $e');
       if (mounted) {
