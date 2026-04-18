@@ -83,21 +83,23 @@ class _LoginScreenState extends State<LoginScreen> {
         final userName = result['user']['name'] as String;
         final userEmail = result['user']['email'] as String;
         final isAdmin = result['user']['is_admin'] == true;
-        // OTP verification temporarily disabled — sign in directly.
-        widget.onLogin(userName, userEmail, isAdmin);
-        // Navigator.push(
-        //   context,
-        //   MaterialPageRoute(
-        //     builder: (_) => OTPVerificationScreen(
-        //       verificationType: 'email',
-        //       contactInfo: userEmail,
-        //       onVerify: (otp) {
-        //         Navigator.pop(context);
-        //         widget.onLogin(userName, userEmail);
-        //       },
-        //     ),
-        //   ),
-        // );
+        if (isAdmin) {
+          widget.onLogin(userName, userEmail, isAdmin);
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => OTPVerificationScreen(
+                verificationType: 'email',
+                contactInfo: userEmail,
+                onVerify: (_) {
+                  Navigator.pop(context);
+                  widget.onLogin(userName, userEmail, isAdmin);
+                },
+              ),
+            ),
+          );
+        }
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -120,7 +122,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleGoogleSignIn() async {
     setState(() => _isLoading = true);
     try {
-      final googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+      final googleSignIn = GoogleSignIn(scopes: [
+        'email',
+        'profile',
+        'https://www.googleapis.com/auth/calendar',
+      ]);
       final account = await googleSignIn.signIn();
       if (account == null) {
         // User cancelled the sign-in
@@ -128,24 +134,23 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       final name = account.displayName ?? account.email.split('@').first;
       final email = account.email;
-      if (mounted) {
-        // OTP verification temporarily disabled — sign in directly.
-        // Google sign-in never grants admin access; admins must sign in via
-        // password credentials provisioned by scripts/seed_admins.py.
-        widget.onLogin(name, email, false);
-        // Navigator.push(
-        //   context,
-        //   MaterialPageRoute(
-        //     builder: (_) => OTPVerificationScreen(
-        //       verificationType: 'email',
-        //       contactInfo: email,
-        //       onVerify: (otp) {
-        //         Navigator.pop(context);
-        //         widget.onLogin(name, email);
-        //       },
-        //     ),
-        //   ),
-        // );
+
+      // Authenticate with backend so the user gets a JWT token
+      // (fixes AI chatbot and all other API calls)
+      try {
+        final result = await ApiService.googleAuth(name: name, email: email);
+        if (mounted) {
+          final userName = result['user']['name'] as String;
+          final userEmail = result['user']['email'] as String;
+          final isAdmin = result['user']['is_admin'] == true;
+          widget.onLogin(userName, userEmail, isAdmin);
+        }
+      } on ApiException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Auth error: ${e.message}')),
+          );
+        }
       }
     } catch (e) {
       debugPrint('Google Sign-In Error: $e');

@@ -139,6 +139,26 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
   void _submit() {
     if (_nameCtrl.text.trim().isEmpty || _dosageCtrl.text.trim().isEmpty) return;
 
+    // Validate schedule: at least one day with at least one time
+    final hasValidSchedule = _schedule.isNotEmpty &&
+        _schedule.any((entry) => entry.times.isNotEmpty);
+    if (!hasValidSchedule) {
+      setState(() => _alertType = 'no_schedule');
+      return;
+    }
+
+    // Validate calendar: start date is required
+    if (_startDate == null) {
+      setState(() => _alertType = 'no_start_date');
+      return;
+    }
+
+    // Validate end date if not lifetime
+    if (!_isLifetime && _endDate == null) {
+      setState(() => _alertType = 'no_end_date');
+      return;
+    }
+
     final interactions = _checkInteractions(_nameCtrl.text.trim());
     if (interactions.isNotEmpty) {
       setState(() {
@@ -366,6 +386,12 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                   // Alerts
                   if (_alertType == 'success')
                     _alert(true, 'Medication added successfully!', []),
+                  if (_alertType == 'no_schedule')
+                    _alert(false, 'Please add at least one day with a time in the Schedule section to receive reminders.', []),
+                  if (_alertType == 'no_start_date')
+                    _alert(false, 'Please select a start date in the Duration section.', []),
+                  if (_alertType == 'no_end_date')
+                    _alert(false, 'Please select an end date or mark as lifetime medication.', []),
                   if (_alertType == 'interaction')
                     _alert(false, '${_nameCtrl.text} has known interactions with:', _interactingMeds),
 

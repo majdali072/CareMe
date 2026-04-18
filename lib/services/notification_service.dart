@@ -73,11 +73,12 @@ class NotificationService {
   }
 
   /// Schedule every occurrence for `med` within its active window.
-  /// Silently no-ops when the medication has no id, no schedule, or no times.
-  static Future<void> scheduleMedication(Medication med) async {
+  /// Returns the number of notifications scheduled (0 if none).
+  static Future<int> scheduleMedication(Medication med) async {
     await init();
     if (med.id == null || med.schedule == null || med.schedule!.isEmpty) {
-      return;
+      debugPrint('NOTIF: skipped - id=${med.id}, schedule=${med.schedule}');
+      return 0;
     }
 
     // Start cleanly: cancel any prior reminders for this med id.
@@ -97,7 +98,12 @@ class NotificationService {
       end = now.add(lifetimeHorizon);
     }
 
-    if (end.isBefore(start)) return;
+    debugPrint('NOTIF: scheduling "${med.name}" from $start to $end');
+
+    if (end.isBefore(start)) {
+      debugPrint('NOTIF: skipped - end is before start');
+      return 0;
+    }
 
     const androidDetails = AndroidNotificationDetails(
       'meds_channel',
@@ -115,12 +121,16 @@ class NotificationService {
     const details =
         NotificationDetails(android: androidDetails, iOS: iosDetails);
 
+    int scheduled = 0;
+
     for (final entry in med.schedule!) {
       final weekday = _dayToWeekday[entry.day.toLowerCase()];
+      debugPrint('NOTIF: day="${entry.day}" -> weekday=$weekday, times=${entry.times}');
       if (weekday == null) continue;
 
       for (final timeStr in entry.times) {
         final parsed = _parseTime(timeStr);
+        debugPrint('NOTIF: parsing time "$timeStr" -> ${parsed != null ? "${parsed.hour}:${parsed.minute}" : "FAILED"}');
         if (parsed == null) continue;
 
         // Step day-by-day within window, pick matching weekdays, fire at time.
@@ -148,8 +158,9 @@ class NotificationService {
                       UILocalNotificationDateInterpretation.absoluteTime,
                   payload: 'medication:${med.id}',
                 );
+                scheduled++;
               } catch (e) {
-                debugPrint('Failed to schedule med notif: $e');
+                debugPrint('NOTIF: ERROR scheduling at $fireAt: $e');
               }
             }
           }
@@ -157,6 +168,75 @@ class NotificationService {
         }
       }
     }
+
+    debugPrint('NOTIF: scheduled $scheduled notifications for "${med.name}"');
+
+    // Show a confirmation so the user knows reminders were set
+    if (scheduled > 0) {
+      await _plugin.show(
+        _notifId(med.id!, now),
+        'Reminders set for ${med.name}',
+        '$scheduled reminder(s) scheduled',
+        details,
+      );
+    }
+
+    return scheduled;
+  }
+
+  /// Fire a test notification immediately + schedule one 15 seconds later.
+  /// Returns a debug string with scheduling info.
+  static Future<String> showTestNotification() async {
+    await init();
+    const androidDetails = AndroidNotificationDetails(
+      'meds_channel',
+      'Medication Reminders',
+      channelDescription: 'Reminders to take scheduled medications',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+    const details =
+        NotificationDetails(android: androidDetails, iOS: iosDetails);
+
+    // Instant notification
+    await _plugin.show(
+      0,
+      'CareMe Test (instant)',
+      'This is the instant notification - it works!',
+      details,
+    );
+
+    // Scheduled notification 15 seconds from now (same method as medications)
+    final fireAt = DateTime.now().add(const Duration(seconds: 15));
+    final tzFireAt = tz.TZDateTime.from(fireAt, tz.local);
+    String debugInfo = 'Timezone: ${tz.local.name}\n'
+        'Now: ${DateTime.now()}\n'
+        'Scheduled for: $tzFireAt';
+
+    try {
+      await _plugin.zonedSchedule(
+        99999,
+        'CareMe Test (scheduled)',
+        'This scheduled notification fired! Medication reminders will work.',
+        tzFireAt,
+        details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: 'test',
+      );
+      final pending = await _plugin.pendingNotificationRequests();
+      debugInfo += '\nPending notifications: ${pending.length}';
+    } catch (e) {
+      debugInfo += '\nSchedule ERROR: $e';
+    }
+
+    return debugInfo;
   }
 
   /// Cancel every notification whose payload belongs to `medId`.

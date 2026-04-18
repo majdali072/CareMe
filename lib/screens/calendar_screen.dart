@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/app_models.dart';
+import '../services/google_calendar_service.dart';
 import '../widgets/edit_appointment_dialog.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -146,7 +147,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           ),
                         );
                       }),
-                      _iconBtn(Icons.delete_outline, () {
+                      _iconBtn(Icons.delete_outline, () async {
+                        // Delete from Google Calendar if event ID exists
+                        if (apt.googleEventId != null && apt.googleEventId!.isNotEmpty) {
+                          await GoogleCalendarService.deleteEvent(apt.googleEventId!);
+                        }
                         final apts = List<Appointment>.from(widget.appointments)..removeAt(index);
                         widget.onAppointmentsChanged(apts);
                       }),

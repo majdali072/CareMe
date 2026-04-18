@@ -1,18 +1,87 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_models.dart';
 
 class ApiService {
-  // Use 10.0.2.2 for Android emulator, localhost for web/desktop
-  static const String _baseUrl = 'http://localhost:8000/api';
+  // Public tunnel via ngrok. Change when the tunnel URL rotates.
+  static const String _baseUrl = 'https://entail-joining-pamphlet.ngrok-free.dev/api';
   static String? _token;
   static String? _refreshToken;
   static String? _userId;
+  static String? _userName;
+  static String? _userEmail;
+  static bool _isAdmin = false;
+
+  static const _kToken = 'auth_token';
+  static const _kRefresh = 'auth_refresh';
+  static const _kUserId = 'auth_user_id';
+  static const _kName = 'auth_user_name';
+  static const _kEmail = 'auth_user_email';
+  static const _kIsAdmin = 'auth_is_admin';
+
+  static String? get userName => _userName;
+  static String? get userEmail => _userEmail;
+  static bool get isAdmin => _isAdmin;
+
+  static Future<void> _persistSession({
+    required String token,
+    required String refresh,
+    required String userId,
+    required String name,
+    required String email,
+    required bool isAdmin,
+  }) async {
+    _token = token;
+    _refreshToken = refresh;
+    _userId = userId;
+    _userName = name;
+    _userEmail = email;
+    _isAdmin = isAdmin;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kToken, token);
+    await prefs.setString(_kRefresh, refresh);
+    await prefs.setString(_kUserId, userId);
+    await prefs.setString(_kName, name);
+    await prefs.setString(_kEmail, email);
+    await prefs.setBool(_kIsAdmin, isAdmin);
+  }
+
+  static Future<bool> loadSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_kToken);
+    if (token == null) return false;
+    _token = token;
+    _refreshToken = prefs.getString(_kRefresh);
+    _userId = prefs.getString(_kUserId);
+    _userName = prefs.getString(_kName);
+    _userEmail = prefs.getString(_kEmail);
+    _isAdmin = prefs.getBool(_kIsAdmin) ?? false;
+    return true;
+  }
+
+  static Future<void> _clearSession() async {
+    _token = null;
+    _refreshToken = null;
+    _userId = null;
+    _userName = null;
+    _userEmail = null;
+    _isAdmin = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kToken);
+    await prefs.remove(_kRefresh);
+    await prefs.remove(_kUserId);
+    await prefs.remove(_kName);
+    await prefs.remove(_kEmail);
+    await prefs.remove(_kIsAdmin);
+  }
 
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '1',
         if (_token != null) 'Authorization': 'Bearer $_token',
       };
 
@@ -22,18 +91,15 @@ class ApiService {
     // For switching between emulator/device/web
   }
 
-  static void logout() {
-    // Revoke refresh token on server
+  static Future<void> logout() async {
     if (_refreshToken != null) {
       http.post(
         Uri.parse('$_baseUrl/auth/logout/'),
         headers: _headers,
         body: jsonEncode({'refresh_token': _refreshToken}),
-      ).catchError((_) => http.Response('', 200)); // best-effort
+      ).catchError((_) => http.Response('', 200));
     }
-    _token = null;
-    _refreshToken = null;
-    _userId = null;
+    await _clearSession();
   }
 
   // ---------- Token Refresh ----------
@@ -54,13 +120,14 @@ class ApiService {
         final data = jsonDecode(response.body);
         _token = data['token'];
         _refreshToken = data['refresh_token'];
+        final prefs = await SharedPreferences.getInstance();
+        if (_token != null) await prefs.setString(_kToken, _token!);
+        if (_refreshToken != null) await prefs.setString(_kRefresh, _refreshToken!);
         return true;
       }
     } catch (_) {}
 
-    // Refresh failed — user must re-login
-    _token = null;
-    _refreshToken = null;
+    await _clearSession();
     return false;
   }
 
@@ -97,9 +164,14 @@ class ApiService {
 
     final data = jsonDecode(response.body);
     if (response.statusCode == 201) {
-      _token = data['token'];
-      _refreshToken = data['refresh_token'];
-      _userId = data['user']['id'];
+      await _persistSession(
+        token: data['token'],
+        refresh: data['refresh_token'],
+        userId: data['user']['id'],
+        name: data['user']['name'] ?? '',
+        email: data['user']['email'] ?? '',
+        isAdmin: data['user']['is_admin'] == true,
+      );
       return data;
     }
     throw ApiException(data['error'] ?? 'Registration failed');
@@ -117,12 +189,42 @@ class ApiService {
 
     final data = jsonDecode(response.body);
     if (response.statusCode == 200) {
-      _token = data['token'];
-      _refreshToken = data['refresh_token'];
-      _userId = data['user']['id'];
+      await _persistSession(
+        token: data['token'],
+        refresh: data['refresh_token'],
+        userId: data['user']['id'],
+        name: data['user']['name'] ?? '',
+        email: data['user']['email'] ?? '',
+        isAdmin: data['user']['is_admin'] == true,
+      );
       return data;
     }
     throw ApiException(data['error'] ?? 'Login failed');
+  }
+
+  static Future<Map<String, dynamic>> googleAuth({
+    required String name,
+    required String email,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/auth/google/'),
+      headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1'},
+      body: jsonEncode({'name': name, 'email': email}),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      await _persistSession(
+        token: data['token'],
+        refresh: data['refresh_token'],
+        userId: data['user']['id'],
+        name: data['user']['name'] ?? '',
+        email: data['user']['email'] ?? '',
+        isAdmin: data['user']['is_admin'] == true,
+      );
+      return data;
+    }
+    throw ApiException(data['error'] ?? 'Google authentication failed');
   }
 
   // ---------- OTP ----------
@@ -357,17 +459,26 @@ class ApiService {
   // ---------- Chat ----------
 
   static Future<String> sendChatMessage(String message, List<Map<String, dynamic>> history) async {
-    final response = await _authenticatedRequest(() => http.post(
-      Uri.parse('$_baseUrl/chat/'),
-      headers: _headers,
-      body: jsonEncode({'message': message, 'history': history}),
-    ));
+    final client = http.Client();
+    try {
+      final response = await _authenticatedRequest(() async {
+        final request = http.Request('POST', Uri.parse('$_baseUrl/chat/'));
+        request.headers.addAll(_headers);
+        request.body = jsonEncode({'message': message, 'history': history});
+        final streamed = await client.send(request).timeout(
+          const Duration(seconds: 60),
+        );
+        return http.Response.fromStream(streamed);
+      });
 
-    final data = jsonDecode(response.body);
-    if (response.statusCode == 200) {
-      return data['reply'];
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return data['reply'];
+      }
+      throw ApiException(data['error'] ?? 'Failed to get response');
+    } finally {
+      client.close();
     }
-    throw ApiException(data['error'] ?? 'Failed to get response');
   }
 
   // ---------- Export Data ----------
@@ -384,6 +495,53 @@ class ApiService {
     }
     final data = jsonDecode(response.body);
     throw ApiException(data['error'] ?? 'Failed to export data');
+  }
+
+  // ---------- Profile Photo ----------
+
+  static Future<Uint8List?> getProfilePhoto() async {
+    final response = await _authenticatedRequest(() => http.get(
+      Uri.parse('$_baseUrl/users/profile-photo/'),
+      headers: {if (_token != null) 'Authorization': 'Bearer $_token'},
+    ));
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    }
+    return null;
+  }
+
+  static Future<bool> uploadProfilePhoto(Uint8List photoBytes) async {
+    Future<http.Response> doUpload() async {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/users/profile-photo/'),
+      );
+      if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+      request.files.add(http.MultipartFile.fromBytes(
+        'photo',
+        photoBytes,
+        filename: 'profile.jpg',
+      ));
+      final streamed = await request.send();
+      return http.Response.fromStream(streamed);
+    }
+
+    var response = await doUpload();
+    if (response.statusCode == 401) {
+      final body = jsonDecode(response.body);
+      if (body['code'] == 'token_expired' && await _refreshAccessToken()) {
+        response = await doUpload();
+      }
+    }
+    return response.statusCode == 200;
+  }
+
+  static Future<bool> deleteProfilePhoto() async {
+    final response = await _authenticatedRequest(() => http.delete(
+      Uri.parse('$_baseUrl/users/profile-photo/'),
+      headers: _headers,
+    ));
+    return response.statusCode == 200;
   }
 
   // ---------- Account ----------

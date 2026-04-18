@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../models/app_models.dart';
 import '../services/google_calendar_service.dart';
 
@@ -22,6 +23,48 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
   TimeOfDay? _pickedTime;
   String? _alertType;
   bool _submitting = false;
+
+  // Google Sign-In state
+  GoogleSignInAccount? _googleAccount;
+  bool _signingIn = false;
+
+  static final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email', 'https://www.googleapis.com/auth/calendar'],
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    // Check if already signed in
+    _googleAccount = _googleSignIn.currentUser;
+    if (_googleAccount == null) {
+      _googleSignIn.signInSilently().then((account) {
+        if (mounted && account != null) {
+          setState(() => _googleAccount = account);
+        }
+      });
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _signingIn = true);
+    try {
+      final account = await _googleSignIn.signIn();
+      if (mounted) {
+        setState(() {
+          _googleAccount = account;
+          _signingIn = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _signingIn = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google sign-in failed: $e')),
+        );
+      }
+    }
+  }
 
   Future<void> _submit() async {
     if (_titleCtrl.text.isEmpty || _typeCtrl.text.isEmpty || _dateCtrl.text.isEmpty || _timeCtrl.text.isEmpty) return;
@@ -48,12 +91,15 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
       'Created via CareMe',
     ].join('\n');
 
-    final eventId = await GoogleCalendarService.createEvent(
-      title: _titleCtrl.text,
-      description: description,
-      location: _locationCtrl.text,
-      start: start,
-    );
+    String? eventId;
+    if (_googleAccount != null) {
+      eventId = await GoogleCalendarService.createEvent(
+        title: _titleCtrl.text,
+        description: description,
+        location: _locationCtrl.text,
+        start: start,
+      );
+    }
 
     widget.onAdd(Appointment(
       date: _pickedDate!.day,
@@ -61,12 +107,19 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
       time: _timeCtrl.text,
       type: _typeCtrl.text,
       location: _locationCtrl.text,
+      googleEventId: eventId,
     ));
 
     if (!mounted) return;
     setState(() {
       _submitting = false;
-      _alertType = eventId != null ? 'success' : 'added_no_gcal';
+      if (_googleAccount == null) {
+        _alertType = 'added_no_gcal';
+      } else if (eventId != null) {
+        _alertType = 'success';
+      } else {
+        _alertType = 'added_gcal_failed';
+      }
     });
 
     Future.delayed(const Duration(milliseconds: 1800), () { if (mounted) Navigator.pop(context); });
@@ -96,6 +149,9 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
+                    // Google Calendar sign-in section
+                    _buildGoogleCalendarSection(),
+                    const SizedBox(height: 14),
                     _field('Title', _titleCtrl, 'e.g., Dr. Smith'),
                     const SizedBox(height: 14),
                     _field('Appointment Type', _typeCtrl, 'e.g., Checkup, Follow-up'),
@@ -111,7 +167,9 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                     if (_alertType == 'success')
                       _alert(true, 'Appointment added & synced to Google Calendar!'),
                     if (_alertType == 'added_no_gcal')
-                      _alert(false, 'Appointment added. Google Calendar sync failed — sign in with Google to sync.'),
+                      _alert(false, 'Appointment added locally. Sign in with Google above to sync to your calendar.'),
+                    if (_alertType == 'added_gcal_failed')
+                      _alert(false, 'Appointment added but Google Calendar sync failed.'),
                     if (_alertType == 'conflict')
                       _alert(false, 'Warning: Time conflict detected with another appointment.'),
                     const SizedBox(height: 8),
@@ -134,6 +192,86 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGoogleCalendarSection() {
+    if (_googleAccount != null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0FDF4),
+          border: Border.all(color: const Color(0xFF86EFAC)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Google Calendar connected',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF15803D))),
+                  Text(_googleAccount!.email,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                ],
+              ),
+            ),
+            GestureDetector(
+              onTap: () async {
+                await _googleSignIn.signOut();
+                setState(() => _googleAccount = null);
+              },
+              child: const Icon(Icons.close, size: 18, color: Color(0xFF9CA3AF)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: _signingIn ? null : _signInWithGoogle,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: _signingIn
+                  ? const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.calendar_month, color: Color(0xFF4285F4), size: 18),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Sign in with Google',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF111418))),
+                  Text('Sync this appointment to your Google Calendar',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: Color(0xFF9CA3AF)),
           ],
         ),
       ),

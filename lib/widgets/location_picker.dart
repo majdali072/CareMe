@@ -1,13 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
-
-import '../config/app_config.dart';
 
 class SelectedLocation {
   final String address;
@@ -191,39 +186,23 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       _error = null;
     });
     try {
-      LatLng? latLng;
-      String? resolvedAddress;
-      if (kIsWeb) {
-        final web = await _webForwardGeocode(query);
-        if (web.error != null || web.latLng == null) {
-          setState(() {
-            _busy = false;
-            _error = web.error ?? 'No results for "$query".';
-          });
-          return;
-        }
-        latLng = web.latLng;
-        resolvedAddress = web.address;
-      } else {
-        final results = await locationFromAddress(query);
-        if (results.isEmpty) {
-          setState(() {
-            _busy = false;
-            _error = 'No results for "$query".';
-          });
-          return;
-        }
-        latLng = LatLng(results.first.latitude, results.first.longitude);
-        final reverse = await _reverseGeocode(latLng);
-        resolvedAddress = reverse.address;
+      final results = await locationFromAddress(query);
+      if (results.isEmpty) {
+        setState(() {
+          _busy = false;
+          _error = 'No results for "$query".';
+        });
+        return;
       }
+      final latLng = LatLng(results.first.latitude, results.first.longitude);
+      final reverse = await _reverseGeocode(latLng);
       setState(() {
         _pin = latLng;
-        _addressCtrl.text = resolvedAddress ?? query;
+        _addressCtrl.text = reverse.address ?? query;
         _busy = false;
       });
       final ctrl = await _mapController.future;
-      await ctrl.animateCamera(CameraUpdate.newLatLngZoom(latLng!, 15));
+      await ctrl.animateCamera(CameraUpdate.newLatLngZoom(latLng, 15));
     } catch (e) {
       setState(() {
         _busy = false;
@@ -233,7 +212,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   }
 
   Future<_GeocodeResult> _reverseGeocode(LatLng latLng) async {
-    if (kIsWeb) return _webReverseGeocode(latLng);
     try {
       final places = await placemarkFromCoordinates(
         latLng.latitude,
@@ -245,70 +223,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       return _GeocodeResult(address: _formatPlacemark(places.first));
     } catch (e) {
       return _GeocodeResult(error: 'Geocoding failed: $e');
-    }
-  }
-
-  Future<_GeocodeResult> _webReverseGeocode(LatLng latLng) async {
-    if (!AppConfig.hasMapsKey) {
-      return const _GeocodeResult(
-        error:
-            'Web reverse-geocoding needs GOOGLE_MAPS_API_KEY via --dart-define.',
-      );
-    }
-    try {
-      final uri = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json'
-        '?latlng=${latLng.latitude},${latLng.longitude}'
-        '&key=${AppConfig.googleMapsApiKey}',
-      );
-      final res = await http.get(uri);
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      if (data['status'] == 'OK' && (data['results'] as List).isNotEmpty) {
-        return _GeocodeResult(
-          address: data['results'][0]['formatted_address'] as String?,
-        );
-      }
-      final status = data['status'] ?? 'UNKNOWN';
-      final msg = data['error_message'];
-      return _GeocodeResult(
-        error: msg == null ? 'Geocoding API: $status' : '$status — $msg',
-      );
-    } catch (e) {
-      return _GeocodeResult(error: 'Network error: $e');
-    }
-  }
-
-  Future<_WebForwardResult> _webForwardGeocode(String query) async {
-    if (!AppConfig.hasMapsKey) {
-      return const _WebForwardResult(
-        error:
-            'Web search needs GOOGLE_MAPS_API_KEY via --dart-define at launch.',
-      );
-    }
-    try {
-      final uri = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json'
-        '?address=${Uri.encodeQueryComponent(query)}'
-        '&key=${AppConfig.googleMapsApiKey}',
-      );
-      final res = await http.get(uri);
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      if (data['status'] != 'OK' || (data['results'] as List).isEmpty) {
-        final status = data['status'] ?? 'UNKNOWN';
-        final msg = data['error_message'];
-        return _WebForwardResult(
-          error: msg == null ? 'Geocoding API: $status' : '$status — $msg',
-        );
-      }
-      final top = data['results'][0];
-      final loc = top['geometry']['location'];
-      return _WebForwardResult(
-        latLng: LatLng(
-            (loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble()),
-        address: top['formatted_address'] as String?,
-      );
-    } catch (e) {
-      return _WebForwardResult(error: 'Network error: $e');
     }
   }
 
@@ -518,11 +432,4 @@ class _GeocodeResult {
   final String? address;
   final String? error;
   const _GeocodeResult({this.address, this.error});
-}
-
-class _WebForwardResult {
-  final LatLng? latLng;
-  final String? address;
-  final String? error;
-  const _WebForwardResult({this.latLng, this.address, this.error});
 }

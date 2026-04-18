@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/app_models.dart';
 
@@ -7,6 +8,7 @@ class HomeScreen extends StatelessWidget {
   final List<Medication> medications;
   final List<Appointment> appointments;
   final List<LabTest> labTests;
+  final Uint8List? profilePhoto;
 
   const HomeScreen({
     super.key,
@@ -15,6 +17,7 @@ class HomeScreen extends StatelessWidget {
     required this.medications,
     required this.appointments,
     required this.labTests,
+    this.profilePhoto,
   });
 
   @override
@@ -49,13 +52,24 @@ class HomeScreen extends StatelessWidget {
                       onTap: () => onNavigate('account'),
                       child: Container(
                         width: 48, height: 48,
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
-                        child: Center(
-                          child: Text(
-                            userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                            style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold, fontSize: 18),
-                          ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          image: profilePhoto != null
+                              ? DecorationImage(
+                                  image: MemoryImage(profilePhoto!),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
                         ),
+                        child: profilePhoto == null
+                            ? Center(
+                                child: Text(
+                                  userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                                  style: const TextStyle(color: Color(0xFF1976D2), fontWeight: FontWeight.bold, fontSize: 18),
+                                ),
+                              )
+                            : null,
                       ),
                     ),
                   ],

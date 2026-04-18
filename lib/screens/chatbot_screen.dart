@@ -62,9 +62,17 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      String errorText;
+      if (e.toString().contains('TimeoutException') || e.toString().contains('timed out')) {
+        errorText = "The request timed out. The AI server may be busy — please try again in a moment.";
+      } else if (e.toString().contains('SocketException') || e.toString().contains('Connection refused')) {
+        errorText = "Could not reach the server. Please check your internet connection and try again.";
+      } else {
+        errorText = "Something went wrong: ${e.toString().length > 100 ? e.toString().substring(0, 100) : e}. Please try again.";
+      }
       final errorMsg = ChatMessage(
         id: _nextId++,
-        text: "I'm sorry, I couldn't connect to the server. Please check your connection and try again.",
+        text: errorText,
         isUser: false,
         timestamp: DateTime.now(),
       );

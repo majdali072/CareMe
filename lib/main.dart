@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -49,6 +50,7 @@ class AppRoot extends StatefulWidget {
 
 class _AppRootState extends State<AppRoot> {
   bool _isLoggedIn = false;
+  bool _bootstrapping = true;
   String _userName = '';
   bool _isAdmin = false;
   String _currentPage = 'home';
@@ -56,6 +58,35 @@ class _AppRootState extends State<AppRoot> {
   List<Medication> _medications = [];
   List<LabTest> _labTests = [];
   List<Appointment> _appointments = [];
+  Uint8List? _profilePhoto;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSession();
+  }
+
+  Future<void> _restoreSession() async {
+    final hasSession = await ApiService.loadSession();
+    if (!hasSession) {
+      setState(() => _bootstrapping = false);
+      return;
+    }
+    try {
+      await ApiService.getProfile();
+      setState(() {
+        _userName = ApiService.userName ?? '';
+        _isAdmin = ApiService.isAdmin;
+        _currentPage = _isAdmin ? 'controller' : 'home';
+        _isLoggedIn = true;
+        _bootstrapping = false;
+      });
+      _loadData();
+    } catch (_) {
+      await ApiService.logout();
+      setState(() => _bootstrapping = false);
+    }
+  }
 
   void _handleLogin(String name, String email, bool isAdmin) {
     setState(() {
@@ -71,11 +102,38 @@ class _AppRootState extends State<AppRoot> {
     try {
       final meds = await ApiService.getMedications();
       final labs = await ApiService.getLabTests();
+
+      // Auto-delete expired medications (end date has passed, not lifetime)
+      final now = DateTime.now();
+      final expired = meds.where((m) =>
+          m.isLifetime != true &&
+          m.endDate != null &&
+          m.endDate!.isBefore(DateTime(now.year, now.month, now.day)),
+      ).toList();
+
+      for (final med in expired) {
+        if (med.id != null) {
+          try {
+            await ApiService.deleteMedication(med.id!);
+            await NotificationService.cancelMedication(med.id!);
+          } catch (_) {}
+        }
+      }
+
+      final activeMeds = meds.where((m) =>
+          m.isLifetime == true ||
+          m.endDate == null ||
+          !m.endDate!.isBefore(DateTime(now.year, now.month, now.day)),
+      ).toList();
+
+      final photoBytes = await ApiService.getProfilePhoto();
+
       setState(() {
-        _medications = meds;
+        _medications = activeMeds;
         _labTests = labs;
+        _profilePhoto = photoBytes;
       });
-      await NotificationService.rescheduleAll(meds);
+      await NotificationService.rescheduleAll(activeMeds);
     } catch (e) {
       // Data will just be empty if server is unreachable
     }
@@ -91,6 +149,7 @@ class _AppRootState extends State<AppRoot> {
       _medications = [];
       _labTests = [];
       _appointments = [];
+      _profilePhoto = null;
     });
   }
 
@@ -142,7 +201,9 @@ class _AppRootState extends State<AppRoot> {
     showDialog(
       context: context,
       builder: (_) => AddScheduleDialog(
-        onAdd: (apt) => setState(() => _appointments.add(apt)),
+        onAdd: (apt) {
+          setState(() => _appointments.add(apt));
+        },
       ),
     );
   }
@@ -224,7 +285,7 @@ class _AppRootState extends State<AppRoot> {
   Widget _buildPage() {
     switch (_currentPage) {
       case 'home':
-        return HomeScreen(userName: _userName, onNavigate: _navigate, medications: _medications, appointments: _appointments, labTests: _labTests);
+        return HomeScreen(userName: _userName, onNavigate: _navigate, medications: _medications, appointments: _appointments, labTests: _labTests, profilePhoto: _profilePhoto);
       case 'medications':
         return MedicationsScreen(onBack: () => _navigate('home'), medications: _medications, labTests: _labTests, onMedicationsChanged: _handleMedicationsChanged, onLabTestsChanged: _handleLabTestsChanged);
       case 'calendar':
@@ -232,14 +293,19 @@ class _AppRootState extends State<AppRoot> {
       case 'chatbot':
         return ChatbotScreen(onBack: () => _navigate('home'));
       case 'account':
-        return AccountScreen(userName: _userName, onLogout: _handleLogout, onBack: () => _navigate('home'), appointments: _appointments);
+        return AccountScreen(userName: _userName, onLogout: _handleLogout, onBack: () => _navigate('home'), appointments: _appointments, profilePhoto: _profilePhoto, onProfilePhotoChanged: (bytes) => setState(() => _profilePhoto = bytes));
       default:
-        return HomeScreen(userName: _userName, onNavigate: _navigate, medications: _medications, appointments: _appointments, labTests: _labTests);
+        return HomeScreen(userName: _userName, onNavigate: _navigate, medications: _medications, appointments: _appointments, labTests: _labTests, profilePhoto: _profilePhoto);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_bootstrapping) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (!_isLoggedIn) {
       return LoginScreen(onLogin: _handleLogin);
     }

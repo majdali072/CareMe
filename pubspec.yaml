@@ -20,17 +20,26 @@ dependencies:
   google_sign_in: ^6.2.1
   googleapis: ^13.2.0
   extension_google_sign_in_as_googleapis_auth: ^2.0.12
-  flutter_local_notifications: ^17.2.3
+  flutter_local_notifications: ^18.0.0
   timezone: ^0.9.4
   flutter_timezone: ^3.0.1
   permission_handler: ^11.3.1
   google_maps_flutter: ^2.9.0
   geocoding: ^3.0.0
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/CareMe-Logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/CareMe-Logo.png"
 
 flutter:
   uses-material-design: true

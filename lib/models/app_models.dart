@@ -148,6 +148,7 @@ class Appointment {
   final String time;
   final String type;
   final String location;
+  final String? googleEventId;
 
   Appointment({
     required this.date,
@@ -155,6 +156,7 @@ class Appointment {
     required this.time,
     required this.type,
     required this.location,
+    this.googleEventId,
   });
 
   Appointment copyWith({
@@ -163,6 +165,7 @@ class Appointment {
     String? time,
     String? type,
     String? location,
+    String? googleEventId,
   }) {
     return Appointment(
       date: date ?? this.date,
@@ -170,6 +173,7 @@ class Appointment {
       time: time ?? this.time,
       type: type ?? this.type,
       location: location ?? this.location,
+      googleEventId: googleEventId ?? this.googleEventId,
     );
   }
 }

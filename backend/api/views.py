@@ -194,6 +194,62 @@ def login(request):
     })
 
 
+# ---------- Google Auth ----------
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def google_auth(request):
+    """Sign in (or auto-register) a Google-authenticated user.
+    Expects: { "name": "...", "email": "..." }
+    Returns tokens + user object, identical to login/register responses."""
+    data = _parse_body(request)
+    name = (data.get('name') or '').strip()
+    email = (data.get('email') or '').strip().lower()
+
+    if not email:
+        return JsonResponse({'error': 'Email is required'}, status=400)
+    if not name:
+        name = email.split('@')[0]
+
+    db = get_db()
+    user = db.users.find_one({'email': email})
+
+    if user and user.get('deactivated'):
+        return JsonResponse(
+            {'error': 'This account has been deactivated. Contact support to reactivate.'},
+            status=403,
+        )
+
+    if user is None:
+        # Auto-register (no password — Google-only account)
+        user = {
+            'name': name,
+            'email': email,
+            'password': '',
+            'created_at': datetime.utcnow(),
+            'is_admin': False,
+            'google_account': True,
+        }
+        result = db.users.insert_one(user)
+        user['_id'] = result.inserted_id
+
+    user_id = str(user['_id'])
+    is_admin = bool(user.get('is_admin', False))
+    access_token = create_token(user_id, email)
+    refresh_token = create_refresh_token(user_id, email)
+
+    return JsonResponse({
+        'token': access_token,
+        'refresh_token': refresh_token,
+        'user': {
+            'id': user_id,
+            'name': user.get('name', name),
+            'email': email,
+            'is_admin': is_admin,
+        },
+    })
+
+
 # ---------- Token Refresh ----------
 
 @csrf_exempt
@@ -378,6 +434,46 @@ def profile(request):
         'latitude': updated.get('latitude'),
         'longitude': updated.get('longitude'),
     })
+
+
+# ---------- Profile Photo ----------
+
+@csrf_exempt
+@login_required
+@require_http_methods(['GET', 'POST', 'DELETE'])
+def profile_photo(request):
+    db = get_db()
+    user = db.users.find_one({'_id': ObjectId(request.user_id)})
+    if not user:
+        return JsonResponse({'error': 'User not found'}, status=404)
+
+    if request.method == 'GET':
+        photo_data = user.get('profile_photo')
+        if not photo_data:
+            return JsonResponse({'error': 'No profile photo'}, status=404)
+        image_bytes = base64.b64decode(photo_data)
+        return HttpResponse(image_bytes, content_type='image/jpeg')
+
+    if request.method == 'DELETE':
+        db.users.update_one(
+            {'_id': ObjectId(request.user_id)},
+            {'$unset': {'profile_photo': ''}}
+        )
+        return JsonResponse({'message': 'Photo removed'})
+
+    # POST - upload photo
+    if 'photo' not in request.FILES:
+        return JsonResponse({'error': 'No photo file provided'}, status=400)
+
+    photo_file = request.FILES['photo']
+    photo_bytes = photo_file.read()
+    photo_b64 = base64.b64encode(photo_bytes).decode('utf-8')
+
+    db.users.update_one(
+        {'_id': ObjectId(request.user_id)},
+        {'$set': {'profile_photo': photo_b64}}
+    )
+    return JsonResponse({'message': 'Photo uploaded'})
 
 
 # ---------- Medications ----------

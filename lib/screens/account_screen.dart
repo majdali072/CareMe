@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../models/app_models.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/location_picker.dart';
 import 'otp_verification_screen.dart';
 import 'change_password_screen.dart';
@@ -15,6 +17,8 @@ class AccountScreen extends StatefulWidget {
   final VoidCallback onLogout;
   final VoidCallback onBack;
   final List<Appointment> appointments;
+  final Uint8List? profilePhoto;
+  final void Function(Uint8List?) onProfilePhotoChanged;
 
   const AccountScreen({
     super.key,
@@ -22,6 +26,8 @@ class AccountScreen extends StatefulWidget {
     required this.onLogout,
     required this.onBack,
     required this.appointments,
+    this.profilePhoto,
+    required this.onProfilePhotoChanged,
   });
 
   @override
@@ -115,97 +121,33 @@ class _AccountScreenState extends State<AccountScreen> {
   String _address = '';
   double? _latitude;
   double? _longitude;
-  File? _profileImage;
+  Uint8List? _profilePhoto;
 
   @override
   void initState() {
     super.initState();
     _fullName = widget.userName;
-    _loadProfileImage();
+    _profilePhoto = widget.profilePhoto;
     _loadProfile();
   }
 
-  Future<void> _loadProfileImage() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, 'profile_pic.jpg'));
-    if (await file.exists()) {
-      setState(() => _profileImage = file);
-    }
-  }
-
   Future<void> _pickProfileImage() async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: const Color(0xFFD1D5DB),
-                    borderRadius: BorderRadius.circular(2)),
-              ),
-              const SizedBox(height: 16),
-              const Text('Change Profile Picture',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined,
-                    color: Color(0xFF2563EB)),
-                title: const Text('Choose from Gallery'),
-                onTap: () => Navigator.pop(ctx, 'gallery'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.camera_alt_outlined,
-                    color: Color(0xFF2563EB)),
-                title: const Text('Take a Photo'),
-                onTap: () => Navigator.pop(ctx, 'camera'),
-              ),
-              if (_profileImage != null)
-                ListTile(
-                  leading: const Icon(Icons.delete_outline,
-                      color: Color(0xFFDC2626)),
-                  title: const Text('Remove Photo',
-                      style: TextStyle(color: Color(0xFFDC2626))),
-                  onTap: () => Navigator.pop(ctx, 'remove'),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (choice == null) return;
-
-    if (choice == 'remove') {
-      await _removeProfileImage();
-      return;
-    }
-
-    final source =
-        choice == 'camera' ? ImageSource.camera : ImageSource.gallery;
     final picked = await ImagePicker().pickImage(
-        source: source, maxWidth: 600, maxHeight: 600, imageQuality: 80);
+        source: ImageSource.gallery, maxWidth: 600, maxHeight: 600, imageQuality: 80);
     if (picked == null) return;
 
-    final dir = await getApplicationDocumentsDirectory();
-    final savedPath = p.join(dir.path, 'profile_pic.jpg');
-    final savedFile = await File(picked.path).copy(savedPath);
-    setState(() => _profileImage = savedFile);
+    final bytes = await File(picked.path).readAsBytes();
+    setState(() => _profilePhoto = bytes);
+    widget.onProfilePhotoChanged(bytes);
+
+    // Upload to backend
+    await ApiService.uploadProfilePhoto(bytes);
   }
 
   Future<void> _removeProfileImage() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, 'profile_pic.jpg'));
-    if (await file.exists()) await file.delete();
-    setState(() => _profileImage = null);
+    setState(() => _profilePhoto = null);
+    widget.onProfilePhotoChanged(null);
+    await ApiService.deleteProfilePhoto();
   }
 
   Future<void> _loadProfile() async {
@@ -422,6 +364,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     const SizedBox(height: 24),
                     GestureDetector(
                       onTap: _pickProfileImage,
+                      onLongPress: _profilePhoto != null ? _removeProfileImage : null,
                       child: Stack(
                         children: [
                           _buildAvatar(80),
@@ -485,6 +428,33 @@ class _AccountScreenState extends State<AccountScreen> {
                       'Security & Privacy',
                       'Password, privacy controls',
                       () => setState(() => _showSecurity = true)),
+                  _buildNavRow(
+                      Icons.notifications_active_outlined,
+                      const Color(0xFFF97316),
+                      'Test Notifications',
+                      'Send instant + scheduled (15s) test',
+                      () async {
+                        final debugInfo = await NotificationService.showTestNotification();
+                        if (mounted) {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Notification Test'),
+                              content: Text(
+                                'Instant notification sent now.\n'
+                                'Scheduled notification in 15 seconds.\n\n'
+                                'Debug info:\n$debugInfo',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('OK'),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                      }),
                 ]),
                 const SizedBox(height: 14),
                 _buildSection('Support', [
@@ -1277,19 +1247,19 @@ Contact: support@careme.app''';
       width: size,
       height: size,
       decoration: BoxDecoration(
-        gradient: _profileImage == null
+        gradient: _profilePhoto == null
             ? const LinearGradient(
                 colors: [Color(0xFF3B82F6), Color(0xFF2563EB)])
             : null,
         borderRadius: BorderRadius.circular(size / 2),
-        image: _profileImage != null
+        image: _profilePhoto != null
             ? DecorationImage(
-                image: FileImage(_profileImage!),
+                image: MemoryImage(_profilePhoto!),
                 fit: BoxFit.cover,
               )
             : null,
       ),
-      child: _profileImage == null
+      child: _profilePhoto == null
           ? Center(
               child: Text(
                 _fullName.isNotEmpty ? _fullName[0].toUpperCase() : 'U',
