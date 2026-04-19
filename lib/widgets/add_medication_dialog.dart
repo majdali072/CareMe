@@ -29,33 +29,30 @@ class AddMedicationDialog extends StatefulWidget {
 class _AddMedicationDialogState extends State<AddMedicationDialog> {
   final _nameCtrl = TextEditingController();
   final _dosageCtrl = TextEditingController();
-  final _frequencyCtrl = TextEditingController();
   final _purposeCtrl = TextEditingController();
   final _sideEffectsCtrl = TextEditingController();
 
-  // Schedule
   List<MedScheduleEntry> _schedule = [];
   int? _expandedDay;
 
-  // Duration
   DateTime? _startDate;
   DateTime? _endDate;
   bool _isLifetime = false;
 
-  // Alerts
-  String? _alertType; // 'success' | 'interaction'
+  String? _errorMessage;
+  bool _success = false;
   List<String> _interactingMeds = [];
+  bool _showInteraction = false;
 
   static const List<String> _weekDays = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-    'Friday', 'Saturday', 'Sunday'
+    'Friday', 'Saturday', 'Sunday',
   ];
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _dosageCtrl.dispose();
-    _frequencyCtrl.dispose();
     _purposeCtrl.dispose();
     _sideEffectsCtrl.dispose();
     super.dispose();
@@ -63,7 +60,9 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
 
   List<String> _checkInteractions(String name) {
     final potentials = _drugInteractions[name] ?? [];
-    return widget.currentMedications.where((m) => potentials.contains(m)).toList();
+    return widget.currentMedications
+        .where((m) => potentials.contains(m))
+        .toList();
   }
 
   Future<DateTime?> _pickDate(DateTime? initial) async {
@@ -77,7 +76,6 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
           colorScheme: const ColorScheme.light(
             primary: Color(0xFF2563EB),
             onPrimary: Colors.white,
-            surface: Colors.white,
           ),
         ),
         child: child!,
@@ -100,82 +98,89 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
       ),
     );
     if (picked == null) return null;
-    final h = picked.hour.toString().padLeft(2, '0');
-    final min = picked.minute.toString().padLeft(2, '0');
-    return '$h:$min';
+    return '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
   }
 
   void _addDay() {
     final alreadyAdded = _schedule.map((e) => e.day).toSet();
-    final available = _weekDays.where((d) => !alreadyAdded.contains(d)).toList();
+    final available =
+        _weekDays.where((d) => !alreadyAdded.contains(d)).toList();
     if (available.isEmpty) return;
 
     showDialog(
       context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text('Select Day'),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: available
-                .map((day) => ListTile(
-                      title: Text(day),
-                      onTap: () {
-                        setState(() {
-                          _schedule.add(MedScheduleEntry(day: day, times: []));
-                          _expandedDay = _schedule.length - 1;
-                        });
-                        Navigator.pop(context);
-                      },
-                    ))
-                .toList(),
-          ),
-        );
-      },
+      builder: (_) => AlertDialog(
+        title: const Text('Select Day'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: available
+              .map((day) => ListTile(
+                    title: Text(day),
+                    onTap: () {
+                      setState(() {
+                        _schedule.add(MedScheduleEntry(day: day, times: []));
+                        _expandedDay = _schedule.length - 1;
+                        _errorMessage = null;
+                      });
+                      Navigator.pop(context);
+                    },
+                  ))
+              .toList(),
+        ),
+      ),
     );
   }
 
   void _submit() {
-    if (_nameCtrl.text.trim().isEmpty || _dosageCtrl.text.trim().isEmpty) return;
+    setState(() {
+      _errorMessage = null;
+      _showInteraction = false;
+    });
 
-    // Validate schedule: at least one day with at least one time
-    final hasValidSchedule = _schedule.isNotEmpty &&
-        _schedule.any((entry) => entry.times.isNotEmpty);
+    // Validate name & dosage
+    if (_nameCtrl.text.trim().isEmpty || _dosageCtrl.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please fill in medication name and dosage.');
+      return;
+    }
+
+    // Validate schedule has at least one day with one time
+    final hasValidSchedule =
+        _schedule.isNotEmpty && _schedule.any((e) => e.times.isNotEmpty);
     if (!hasValidSchedule) {
-      setState(() => _alertType = 'no_schedule');
+      setState(() => _errorMessage =
+          'Add at least one day with a time in the Schedule section. '
+          'This is required for reminder notifications.');
       return;
     }
 
-    // Validate calendar: start date is required
+    // Validate start date
     if (_startDate == null) {
-      setState(() => _alertType = 'no_start_date');
+      setState(() => _errorMessage = 'Please select a start date.');
       return;
     }
 
-    // Validate end date if not lifetime
+    // Validate end date or lifetime
     if (!_isLifetime && _endDate == null) {
-      setState(() => _alertType = 'no_end_date');
+      setState(() =>
+          _errorMessage = 'Please select an end date or mark as lifetime.');
       return;
     }
 
+    // Check drug interactions
     final interactions = _checkInteractions(_nameCtrl.text.trim());
     if (interactions.isNotEmpty) {
       setState(() {
-        _alertType = 'interaction';
+        _showInteraction = true;
         _interactingMeds = interactions;
       });
       return;
     }
 
-    // Build frequency string from schedule
-    final freq = _frequencyCtrl.text.trim().isNotEmpty
-        ? _frequencyCtrl.text.trim()
-        : (_schedule.length == 7
-            ? 'Daily'
-            : _schedule.isNotEmpty
-                ? '${_schedule.length}x/week'
-                : '');
+    // Build frequency string
+    final freq = _schedule.length == 7
+        ? 'Daily'
+        : '${_schedule.length}x/week';
 
     // Build time string from first entry
     final time = _schedule.isNotEmpty && _schedule.first.times.isNotEmpty
@@ -194,7 +199,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
       endDate: _isLifetime ? null : _endDate,
       isLifetime: _isLifetime,
     ));
-    setState(() => _alertType = 'success');
+    setState(() => _success = true);
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) Navigator.pop(context);
     });
@@ -243,25 +248,27 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Basic fields
-                  _field('Medication Name', _nameCtrl, 'e.g., Aspirin'),
+                  _field('Medication Name *', _nameCtrl, 'e.g., Aspirin'),
                   const SizedBox(height: 12),
-                  _field('Dosage', _dosageCtrl, 'e.g., 100mg'),
-                  const SizedBox(height: 12),
-                  _field('Frequency', _frequencyCtrl, 'e.g., Daily, 2x/week'),
+                  _field('Dosage *', _dosageCtrl, 'e.g., 100mg'),
                   const SizedBox(height: 12),
                   _field('Purpose', _purposeCtrl, 'e.g., Pain relief'),
                   const SizedBox(height: 12),
-                  _field('Possible Side Effects', _sideEffectsCtrl, 'e.g., Nausea', maxLines: 2),
+                  _field('Possible Side Effects', _sideEffectsCtrl,
+                      'e.g., Nausea',
+                      maxLines: 2),
 
                   const SizedBox(height: 20),
                   const Divider(),
                   const SizedBox(height: 12),
 
-                  // Schedule section
+                  // ── Schedule section ──
                   Row(
                     children: [
-                      const Text('Schedule',
+                      const Icon(Icons.notifications_active,
+                          size: 16, color: Color(0xFFF97316)),
+                      const SizedBox(width: 6),
+                      const Text('Reminder Schedule *',
                           style: TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
@@ -270,14 +277,16 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                       GestureDetector(
                         onTap: _addDay,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
                             color: const Color(0xFFEFF6FF),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Row(
                             children: [
-                              Icon(Icons.add, size: 14, color: Color(0xFF2563EB)),
+                              Icon(Icons.add,
+                                  size: 14, color: Color(0xFF2563EB)),
                               SizedBox(width: 4),
                               Text('Add Day',
                                   style: TextStyle(
@@ -290,31 +299,49 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Choose which days and times to get reminders',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                  ),
                   const SizedBox(height: 10),
 
                   if (_schedule.isEmpty)
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
+                        color: const Color(0xFFFFF7ED),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        border: Border.all(color: const Color(0xFFFED7AA)),
                       ),
-                      child: const Center(
-                        child: Text('No days added yet',
-                            style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 16, color: Color(0xFFF97316)),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Tap "Add Day" to set up your reminder schedule',
+                              style: TextStyle(
+                                  color: Color(0xFFC2410C), fontSize: 12),
+                            ),
+                          ),
+                        ],
                       ),
                     )
                   else
-                    ..._schedule.asMap().entries.map((e) =>
-                        _buildScheduleRow(e.key, e.value)),
+                    ..._schedule
+                        .asMap()
+                        .entries
+                        .map((e) => _buildScheduleRow(e.key, e.value)),
 
                   const SizedBox(height: 20),
                   const Divider(),
                   const SizedBox(height: 12),
 
-                  // Duration section
-                  const Text('Duration',
+                  // ── Duration section ──
+                  const Text('Duration *',
                       style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
@@ -322,7 +349,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                   const SizedBox(height: 10),
 
                   _dateTile(
-                    label: 'From',
+                    label: 'Start Date',
                     date: _startDate,
                     onTap: () async {
                       final d = await _pickDate(_startDate);
@@ -337,7 +364,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                     child: IgnorePointer(
                       ignoring: _isLifetime,
                       child: _dateTile(
-                        label: 'To',
+                        label: 'End Date',
                         date: _endDate,
                         onTap: () async {
                           final d = await _pickDate(_endDate);
@@ -346,10 +373,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 10),
 
-                  // Lifetime checkbox
                   GestureDetector(
                     onTap: () => setState(() => _isLifetime = !_isLifetime),
                     child: Row(
@@ -359,7 +384,9 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                           width: 22,
                           height: 22,
                           decoration: BoxDecoration(
-                            color: _isLifetime ? const Color(0xFF2563EB) : Colors.white,
+                            color: _isLifetime
+                                ? const Color(0xFF2563EB)
+                                : Colors.white,
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
                               color: _isLifetime
@@ -369,14 +396,17 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                             ),
                           ),
                           child: _isLifetime
-                              ? const Icon(Icons.check, size: 14, color: Colors.white)
+                              ? const Icon(Icons.check,
+                                  size: 14, color: Colors.white)
                               : null,
                         ),
                         const SizedBox(width: 10),
-                        const Icon(Icons.all_inclusive, size: 16, color: Color(0xFF2563EB)),
+                        const Icon(Icons.all_inclusive,
+                            size: 16, color: Color(0xFF2563EB)),
                         const SizedBox(width: 6),
                         const Text('Lifetime medication',
-                            style: TextStyle(fontSize: 14, color: Color(0xFF111418))),
+                            style: TextStyle(
+                                fontSize: 14, color: Color(0xFF111418))),
                       ],
                     ),
                   ),
@@ -384,24 +414,36 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                   const SizedBox(height: 20),
 
                   // Alerts
-                  if (_alertType == 'success')
-                    _alert(true, 'Medication added successfully!', []),
-                  if (_alertType == 'no_schedule')
-                    _alert(false, 'Please add at least one day with a time in the Schedule section to receive reminders.', []),
-                  if (_alertType == 'no_start_date')
-                    _alert(false, 'Please select a start date in the Duration section.', []),
-                  if (_alertType == 'no_end_date')
-                    _alert(false, 'Please select an end date or mark as lifetime medication.', []),
-                  if (_alertType == 'interaction')
-                    _alert(false, '${_nameCtrl.text} has known interactions with:', _interactingMeds),
+                  if (_success) _alertBox(true, 'Medication added successfully!'),
+                  if (_errorMessage != null)
+                    _alertBox(false, _errorMessage!),
+                  if (_showInteraction) ...[
+                    _alertBox(false,
+                        '${_nameCtrl.text} has known interactions with:'),
+                    ..._interactingMeds.map((m) => Padding(
+                          padding: const EdgeInsets.only(left: 32, bottom: 2),
+                          child: Text('- $m',
+                              style: const TextStyle(
+                                  color: Color(0xFFB91C1C), fontSize: 13)),
+                        )),
+                    const Padding(
+                      padding: EdgeInsets.only(left: 32, top: 4, bottom: 8),
+                      child: Text(
+                          'Please consult your doctor before taking this medication.',
+                          style: TextStyle(
+                              color: Color(0xFF7F1D1D),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500)),
+                    ),
+                  ],
 
                   const SizedBox(height: 8),
 
-                  // Submit button
+                  // Submit
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _submit,
+                      onPressed: _success ? null : _submit,
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         backgroundColor: const Color(0xFF2563EB),
@@ -410,7 +452,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                             borderRadius: BorderRadius.circular(14)),
                       ),
                       child: const Text('Add Medication',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],
@@ -422,7 +465,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
     );
   }
 
-  // ── Schedule row (per day) ────────────────────────────────────────────────
+  // ── Schedule row ──────────────────────────────────────────────────────────
   Widget _buildScheduleRow(int idx, MedScheduleEntry entry) {
     final isOpen = _expandedDay == idx;
     return Container(
@@ -437,10 +480,12 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
           GestureDetector(
             onTap: () => setState(() => _expandedDay = isOpen ? null : idx),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
-                  const Icon(Icons.calendar_today, size: 14, color: Color(0xFF2563EB)),
+                  const Icon(Icons.calendar_today,
+                      size: 14, color: Color(0xFF2563EB)),
                   const SizedBox(width: 8),
                   Text(entry.day,
                       style: const TextStyle(
@@ -449,12 +494,18 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                           color: Color(0xFF111418))),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2563EB),
+                      color: entry.times.isEmpty
+                          ? const Color(0xFFF97316)
+                          : const Color(0xFF2563EB),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text('${entry.times.length}×',
+                    child: Text(
+                        entry.times.isEmpty
+                            ? 'No time'
+                            : '${entry.times.length}x',
                         style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
@@ -491,8 +542,9 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                   const Divider(color: Color(0xFFE5E7EB), height: 1),
                   const SizedBox(height: 10),
                   if (entry.times.isEmpty)
-                    const Text('No times added',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)))
+                    const Text('Tap "Add Time" below',
+                        style:
+                            TextStyle(fontSize: 12, color: Color(0xFFF97316)))
                   else
                     Wrap(
                       spacing: 8,
@@ -505,7 +557,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                                   color: Color(0xFF1D4ED8),
                                   fontWeight: FontWeight.w500)),
                           backgroundColor: Colors.white,
-                          side: const BorderSide(color: Color(0xFFBFDBFE)),
+                          side:
+                              const BorderSide(color: Color(0xFFBFDBFE)),
                           deleteIcon: const Icon(Icons.close,
                               size: 14, color: Color(0xFF6B7280)),
                           onDeleted: () {
@@ -513,8 +566,10 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                               _schedule[idx].times.removeAt(t.key);
                             });
                           },
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 4),
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                         );
                       }).toList(),
                     ),
@@ -523,11 +578,15 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                     onTap: () async {
                       final t = await _pickTime();
                       if (t != null) {
-                        setState(() => _schedule[idx].times.add(t));
+                        setState(() {
+                          _schedule[idx].times.add(t);
+                          _errorMessage = null;
+                        });
                       }
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: const Color(0xFFEFF6FF),
                         borderRadius: BorderRadius.circular(8),
@@ -535,7 +594,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.add_alarm, size: 14, color: Color(0xFF2563EB)),
+                          Icon(Icons.add_alarm,
+                              size: 14, color: Color(0xFF2563EB)),
                           SizedBox(width: 4),
                           Text('Add Time',
                               style: TextStyle(
@@ -579,7 +639,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                 size: 18, color: Color(0xFF2563EB)),
             const SizedBox(width: 10),
             Text(label,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                style:
+                    const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -594,7 +655,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
               ),
             ),
             const SizedBox(width: 6),
-            const Icon(Icons.chevron_right, size: 16, color: Color(0xFF9CA3AF)),
+            const Icon(Icons.chevron_right,
+                size: 16, color: Color(0xFF9CA3AF)),
           ],
         ),
       ),
@@ -634,53 +696,35 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
     );
   }
 
-  // ── Alert widget ──────────────────────────────────────────────────────────
-  Widget _alert(bool success, String message, List<String> meds) {
+  // ── Alert box ─────────────────────────────────────────────────────────────
+  Widget _alertBox(bool success, String message) {
     return Container(
       padding: const EdgeInsets.all(14),
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: success ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
         border: Border.all(
-            color: success ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
+            color:
+                success ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5)),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-              success ? Icons.check_circle : Icons.error_outline,
+          Icon(success ? Icons.check_circle : Icons.error_outline,
               color: success
                   ? const Color(0xFF16A34A)
                   : const Color(0xFFDC2626),
               size: 20),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(message,
-                    style: TextStyle(
-                        color: success
-                            ? const Color(0xFF15803D)
-                            : const Color(0xFF991B1B),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500)),
-                ...meds.map((m) => Text('• $m',
-                    style: const TextStyle(
-                        color: Color(0xFFB91C1C), fontSize: 13))),
-                if (!success)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 6),
-                    child: Text(
-                        'Please consult your doctor before taking this medication.',
-                        style: TextStyle(
-                            color: Color(0xFF7F1D1D),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500)),
-                  ),
-              ],
-            ),
+            child: Text(message,
+                style: TextStyle(
+                    color: success
+                        ? const Color(0xFF15803D)
+                        : const Color(0xFF991B1B),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500)),
           ),
         ],
       ),

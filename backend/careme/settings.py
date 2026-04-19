@@ -11,7 +11,7 @@ if os.path.exists(_env_path):
             line = line.strip()
             if line and not line.startswith('#') and '=' in line:
                 key, value = line.split('=', 1)
-                os.environ.setdefault(key.strip(), value.strip())
+                os.environ[key.strip()] = value.strip()
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'fallback-dev-key-change-me')
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
@@ -71,6 +71,15 @@ FIELD_ENCRYPTION_KEY = os.environ.get('FIELD_ENCRYPTION_KEY', '')
 
 # Google Gemini API
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+
+# Firebase Cloud Messaging
+import firebase_admin
+from firebase_admin import credentials as fb_credentials
+
+_firebase_key_path = os.path.join(BASE_DIR, 'careme-99-firebase-adminsdk-fbsvc-9c8e0f9061.json')
+if os.path.exists(_firebase_key_path) and not firebase_admin._apps:
+    _cred = fb_credentials.Certificate(_firebase_key_path)
+    firebase_admin.initialize_app(_cred)
 
 TEMPLATES = [{
     'BACKEND': 'django.template.backends.django.DjangoTemplates',

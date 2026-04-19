@@ -432,27 +432,21 @@ class _AccountScreenState extends State<AccountScreen> {
                       Icons.notifications_active_outlined,
                       const Color(0xFFF97316),
                       'Test Notifications',
-                      'Send instant + scheduled (15s) test',
+                      'Send a test push notification',
                       () async {
-                        final debugInfo = await NotificationService.showTestNotification();
-                        if (mounted) {
-                          showDialog(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('Notification Test'),
-                              content: Text(
-                                'Instant notification sent now.\n'
-                                'Scheduled notification in 15 seconds.\n\n'
-                                'Debug info:\n$debugInfo',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('OK'),
-                                ),
-                              ],
-                            ),
-                          );
+                        try {
+                          final result = await NotificationService.sendTestNotification();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(result)),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: $e')),
+                            );
+                          }
                         }
                       }),
                 ]),

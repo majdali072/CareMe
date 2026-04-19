@@ -20,7 +20,6 @@ import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.init();
   runApp(const CareMeApp());
 }
 
@@ -82,6 +81,7 @@ class _AppRootState extends State<AppRoot> {
         _bootstrapping = false;
       });
       _loadData();
+      _initNotifications();
     } catch (_) {
       await ApiService.logout();
       setState(() => _bootstrapping = false);
@@ -96,6 +96,12 @@ class _AppRootState extends State<AppRoot> {
       _isLoggedIn = true;
     });
     _loadData();
+    _initNotifications();
+  }
+
+  Future<void> _initNotifications() async {
+    await NotificationService.init();
+    await NotificationService.registerToken();
   }
 
   Future<void> _loadData() async {
@@ -115,7 +121,6 @@ class _AppRootState extends State<AppRoot> {
         if (med.id != null) {
           try {
             await ApiService.deleteMedication(med.id!);
-            await NotificationService.cancelMedication(med.id!);
           } catch (_) {}
         }
       }
@@ -133,7 +138,6 @@ class _AppRootState extends State<AppRoot> {
         _labTests = labs;
         _profilePhoto = photoBytes;
       });
-      await NotificationService.rescheduleAll(activeMeds);
     } catch (e) {
       // Data will just be empty if server is unreachable
     }
@@ -163,8 +167,17 @@ class _AppRootState extends State<AppRoot> {
         onAdd: (med) async {
           try {
             final saved = await ApiService.addMedication(med);
-            setState(() => _medications.add(saved));
-            await NotificationService.scheduleMedication(saved);
+            setState(() => _medications.add(saved.copyWith(
+              schedule: med.schedule,
+              startDate: med.startDate,
+              endDate: med.endDate,
+              isLifetime: med.isLifetime,
+            )));
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${med.name} added. Reminders will be sent via push notification.')),
+              );
+            }
           } catch (e) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -234,7 +247,6 @@ class _AppRootState extends State<AppRoot> {
       } catch (e) {
         // ignore
       }
-      await NotificationService.cancelMedication(med.id!);
     }
 
     // Find which medication was updated (edited)
@@ -258,7 +270,6 @@ class _AppRootState extends State<AppRoot> {
           } catch (e) {
             // ignore
           }
-          await NotificationService.scheduleMedication(u);
         }
       }
     }
@@ -291,7 +302,7 @@ class _AppRootState extends State<AppRoot> {
       case 'calendar':
         return CalendarScreen(onBack: () => _navigate('home'), appointments: _appointments, onAppointmentsChanged: (a) => setState(() => _appointments = a));
       case 'chatbot':
-        return ChatbotScreen(onBack: () => _navigate('home'));
+        return ChatbotScreen(onBack: () => _navigate('home'), profilePhoto: _profilePhoto);
       case 'account':
         return AccountScreen(userName: _userName, onLogout: _handleLogout, onBack: () => _navigate('home'), appointments: _appointments, profilePhoto: _profilePhoto, onProfilePhotoChanged: (bytes) => setState(() => _profilePhoto = bytes));
       default:

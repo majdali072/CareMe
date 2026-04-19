@@ -23,5 +23,8 @@ urlpatterns = [
     path('pharmacies/', views.pharmacies),
     path('pharmacies/<str:pharmacy_id>/', views.pharmacy_detail),
     path('users/export-data/', views.export_data),
+    path('fcm/register/', views.register_fcm_token),
+    path('fcm/send-reminders/', views.send_medication_reminders),
+    path('fcm/test/', views.test_fcm_notification),
     path('chat/', views.chat),
 ]

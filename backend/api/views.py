@@ -26,10 +26,15 @@ from .auth_utils import (
 )
 from .encryption import encrypt_document, decrypt_document
 
+try:
+    from firebase_admin import messaging as fcm_messaging
+except ImportError:
+    fcm_messaging = None
+
 # ---------- Gemini setup ----------
 
 GEMINI_API_URL = (
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
+    'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash-lite:generateContent'
     f'?key={settings.GEMINI_API_KEY}'
 )
 
@@ -474,6 +479,144 @@ def profile_photo(request):
         {'$set': {'profile_photo': photo_b64}}
     )
     return JsonResponse({'message': 'Photo uploaded'})
+
+
+# ---------- FCM Push Notifications ----------
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def register_fcm_token(request):
+    """Store the user's FCM device token for push notifications."""
+    data = _parse_body(request)
+    token = data.get('fcm_token', '').strip()
+    if not token:
+        return JsonResponse({'error': 'fcm_token is required'}, status=400)
+
+    db = get_db()
+    db.users.update_one(
+        {'_id': ObjectId(request.user_id)},
+        {'$set': {'fcm_token': token}}
+    )
+    return JsonResponse({'message': 'FCM token registered'})
+
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def send_medication_reminders(request):
+    """Check all medications for the current user and send FCM for any due now."""
+    if not fcm_messaging:
+        return JsonResponse({'error': 'Firebase not configured'}, status=500)
+
+    db = get_db()
+    user = db.users.find_one({'_id': ObjectId(request.user_id)})
+    if not user or not user.get('fcm_token'):
+        return JsonResponse({'error': 'No FCM token registered'}, status=400)
+
+    fcm_token = user['fcm_token']
+    meds = list(db.medications.find({'user_id': request.user_id}))
+    meds = [decrypt_document('medications', m) for m in meds]
+
+    now = datetime.now()
+    current_day = now.strftime('%A')  # Monday, Tuesday, etc.
+    current_time = now.strftime('%H:%M')
+
+    sent = 0
+    for med in meds:
+        schedule = med.get('schedule')
+        if not schedule:
+            continue
+
+        # Check date range
+        start_str = med.get('startDate')
+        end_str = med.get('endDate')
+        is_lifetime = med.get('isLifetime', False)
+
+        if start_str:
+            try:
+                start_date = datetime.fromisoformat(start_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                if now < start_date:
+                    continue
+            except Exception:
+                pass
+
+        if not is_lifetime and end_str:
+            try:
+                end_date = datetime.fromisoformat(end_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                if now > end_date:
+                    continue
+            except Exception:
+                pass
+
+        for entry in schedule:
+            day = entry.get('day', '')
+            times = entry.get('times', [])
+            if day.lower() != current_day.lower():
+                continue
+
+            for t in times:
+                # Match within 1-minute window
+                if t.strip() == current_time:
+                    try:
+                        message = fcm_messaging.Message(
+                            notification=fcm_messaging.Notification(
+                                title=f"Time for {med.get('name', 'medication')}",
+                                body=f"Take {med.get('dosage', '')}",
+                            ),
+                            android=fcm_messaging.AndroidConfig(
+                                priority='high',
+                                notification=fcm_messaging.AndroidNotification(
+                                    channel_id='meds_channel',
+                                    priority='max',
+                                    default_sound=True,
+                                    default_vibrate_timings=True,
+                                ),
+                            ),
+                            token=fcm_token,
+                        )
+                        fcm_messaging.send(message)
+                        sent += 1
+                    except Exception as e:
+                        print(f"FCM send error: {e}")
+
+    return JsonResponse({'sent': sent})
+
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def test_fcm_notification(request):
+    """Send a test FCM notification to verify the setup works."""
+    if not fcm_messaging:
+        return JsonResponse({'error': 'Firebase not configured'}, status=500)
+
+    db = get_db()
+    user = db.users.find_one({'_id': ObjectId(request.user_id)})
+    if not user or not user.get('fcm_token'):
+        return JsonResponse({'error': 'No FCM token registered. Open the app first.'}, status=400)
+
+    try:
+        message = fcm_messaging.Message(
+            notification=fcm_messaging.Notification(
+                title='CareMe Test',
+                body='Push notifications are working!',
+            ),
+            android=fcm_messaging.AndroidConfig(
+                priority='high',
+                notification=fcm_messaging.AndroidNotification(
+                    channel_id='meds_channel',
+                    priority='max',
+                    default_sound=True,
+                    default_vibrate_timings=True,
+                ),
+            ),
+            token=user['fcm_token'],
+        )
+        response = fcm_messaging.send(message)
+        return JsonResponse({'message': 'Test notification sent', 'response': response})
+    except Exception as e:
+        return JsonResponse({'error': f'FCM send failed: {e}'}, status=500)
 
 
 # ---------- Medications ----------
@@ -984,7 +1127,12 @@ def chat(request):
     try:
         resp = requests.post(GEMINI_API_URL, json={'contents': contents}, timeout=30)
         resp_data = resp.json()
-        reply = resp_data['candidates'][0]['content']['parts'][0]['text']
+        if 'candidates' in resp_data and resp_data['candidates']:
+            reply = resp_data['candidates'][0]['content']['parts'][0]['text']
+        else:
+            error_msg = resp_data.get('error', {}).get('message', 'Unknown Error')
+            print(f"Gemini API Error: {error_msg}")
+            reply = "I'm having trouble connecting to my brain right now."
     except Exception as e:
         import traceback
         traceback.print_exc()

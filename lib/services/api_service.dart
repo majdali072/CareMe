@@ -544,6 +544,28 @@ class ApiService {
     return response.statusCode == 200;
   }
 
+  // ---------- FCM Push Notifications ----------
+
+  static Future<void> registerFcmToken(String token) async {
+    await _authenticatedRequest(() => http.post(
+      Uri.parse('$_baseUrl/fcm/register/'),
+      headers: _headers,
+      body: jsonEncode({'fcm_token': token}),
+    ));
+  }
+
+  static Future<String> testFcmNotification() async {
+    final response = await _authenticatedRequest(() => http.post(
+      Uri.parse('$_baseUrl/fcm/test/'),
+      headers: _headers,
+    ));
+    final data = jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return data['message'] ?? 'Sent';
+    }
+    throw ApiException(data['error'] ?? 'Failed to send test notification');
+  }
+
   // ---------- Account ----------
 
   static Future<void> deactivateAccount() async {

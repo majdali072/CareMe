@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/app_models.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/edit_medication_dialog.dart';
 
 class MedicationsScreen extends StatefulWidget {
@@ -33,17 +34,9 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
   int? _scheduleOpenMed;
   Timer? _tickTimer;
 
-  static const Map<String, int> _dayToWeekday = {
-    'monday': DateTime.monday, 'tuesday': DateTime.tuesday,
-    'wednesday': DateTime.wednesday, 'thursday': DateTime.thursday,
-    'friday': DateTime.friday, 'saturday': DateTime.saturday,
-    'sunday': DateTime.sunday,
-  };
-
   @override
   void initState() {
     super.initState();
-    // Tick every 30 seconds to update countdowns
     _tickTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
@@ -53,55 +46,6 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
   void dispose() {
     _tickTimer?.cancel();
     super.dispose();
-  }
-
-  /// Returns the next upcoming notification time for a medication, or null.
-  static DateTime? _nextReminderTime(Medication med) {
-    if (med.schedule == null || med.schedule!.isEmpty) return null;
-
-    final now = DateTime.now();
-    DateTime? earliest;
-
-    for (final entry in med.schedule!) {
-      final weekday = _dayToWeekday[entry.day.toLowerCase()];
-      if (weekday == null) continue;
-
-      for (final timeStr in entry.times) {
-        final parsed = _parseTimeSimple(timeStr);
-        if (parsed == null) continue;
-
-        // Find next occurrence of this weekday+time
-        DateTime candidate = DateTime(now.year, now.month, now.day, parsed[0], parsed[1]);
-        // Adjust to the right weekday
-        int daysAhead = weekday - now.weekday;
-        if (daysAhead < 0) daysAhead += 7;
-        candidate = candidate.add(Duration(days: daysAhead));
-        // If it's today but the time already passed, go to next week
-        if (candidate.isBefore(now)) {
-          candidate = candidate.add(const Duration(days: 7));
-        }
-        // Check within medication date range
-        if (med.startDate != null && candidate.isBefore(med.startDate!)) continue;
-        if (med.isLifetime != true && med.endDate != null && candidate.isAfter(med.endDate!)) continue;
-
-        if (earliest == null || candidate.isBefore(earliest)) {
-          earliest = candidate;
-        }
-      }
-    }
-    return earliest;
-  }
-
-  static List<int>? _parseTimeSimple(String raw) {
-    final s = raw.trim().toUpperCase();
-    final m = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)?$').firstMatch(s);
-    if (m == null) return null;
-    var hour = int.parse(m.group(1)!);
-    final minute = int.parse(m.group(2)!);
-    final ampm = m.group(3);
-    if (ampm == 'PM' && hour < 12) hour += 12;
-    if (ampm == 'AM' && hour == 12) hour = 0;
-    return [hour, minute];
   }
 
   static String _formatCountdown(Duration d) {
@@ -304,7 +248,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                             style: const TextStyle(
                                 color: Color(0xFF6B7280), fontSize: 13)),
                         Builder(builder: (_) {
-                          final next = _nextReminderTime(med);
+                          final next = NotificationService.nextReminderTime(med);
                           if (next == null) return const SizedBox.shrink();
                           final diff = next.difference(DateTime.now());
                           return Padding(

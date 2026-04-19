@@ -1,10 +1,12 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/app_models.dart';
 import '../services/api_service.dart';
 
 class ChatbotScreen extends StatefulWidget {
   final VoidCallback onBack;
-  const ChatbotScreen({super.key, required this.onBack});
+  final Uint8List? profilePhoto;
+  const ChatbotScreen({super.key, required this.onBack, this.profilePhoto});
 
   @override
   State<ChatbotScreen> createState() => _ChatbotScreenState();
@@ -260,10 +262,17 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
             Container(
               width: 32, height: 32,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFFA855F7), Color(0xFFEC4899)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                gradient: widget.profilePhoto == null
+                    ? const LinearGradient(colors: [Color(0xFFA855F7), Color(0xFFEC4899)], begin: Alignment.topLeft, end: Alignment.bottomRight)
+                    : null,
                 borderRadius: BorderRadius.circular(16),
+                image: widget.profilePhoto != null
+                    ? DecorationImage(image: MemoryImage(widget.profilePhoto!), fit: BoxFit.cover)
+                    : null,
               ),
-              child: const Icon(Icons.person_outline, color: Colors.white, size: 18),
+              child: widget.profilePhoto == null
+                  ? const Icon(Icons.person_outline, color: Colors.white, size: 18)
+                  : null,
             ),
           ],
         ],
