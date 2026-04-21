@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/medications_screen.dart';
@@ -23,25 +25,56 @@ void main() async {
   runApp(const CareMeApp());
 }
 
-class CareMeApp extends StatelessWidget {
+class CareMeApp extends StatefulWidget {
   const CareMeApp({super.key});
+
+  @override
+  State<CareMeApp> createState() => _CareMeAppState();
+}
+
+class _CareMeAppState extends State<CareMeApp> {
+  static const _themePrefKey = 'theme_mode';
+  ThemeMode _themeMode = ThemeMode.light;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadThemeMode();
+  }
+
+  Future<void> _loadThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_themePrefKey);
+    if (stored == 'dark') {
+      setState(() => _themeMode = ThemeMode.dark);
+    } else if (stored == 'light') {
+      setState(() => _themeMode = ThemeMode.light);
+    }
+  }
+
+  Future<void> _setThemeMode(ThemeMode mode) async {
+    setState(() => _themeMode = mode);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themePrefKey, mode == ThemeMode.dark ? 'dark' : 'light');
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'CareMe',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976D2)),
-        useMaterial3: true,
-      ),
-      home: const AppRoot(),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: _themeMode,
+      home: AppRoot(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
     );
   }
 }
 
 class AppRoot extends StatefulWidget {
-  const AppRoot({super.key});
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
+  const AppRoot({super.key, required this.themeMode, required this.onThemeModeChanged});
 
   @override
   State<AppRoot> createState() => _AppRootState();
@@ -108,33 +141,12 @@ class _AppRootState extends State<AppRoot> {
     try {
       final meds = await ApiService.getMedications();
       final labs = await ApiService.getLabTests();
-
-      // Auto-delete expired medications (end date has passed, not lifetime)
-      final now = DateTime.now();
-      final expired = meds.where((m) =>
-          m.isLifetime != true &&
-          m.endDate != null &&
-          m.endDate!.isBefore(DateTime(now.year, now.month, now.day)),
-      ).toList();
-
-      for (final med in expired) {
-        if (med.id != null) {
-          try {
-            await ApiService.deleteMedication(med.id!);
-          } catch (_) {}
-        }
-      }
-
-      final activeMeds = meds.where((m) =>
-          m.isLifetime == true ||
-          m.endDate == null ||
-          !m.endDate!.isBefore(DateTime(now.year, now.month, now.day)),
-      ).toList();
-
       final photoBytes = await ApiService.getProfilePhoto();
 
       setState(() {
-        _medications = activeMeds;
+        // Keep all meds — the Medications screen splits them into
+        // Active vs Medication History on its own using `isPastOrHistory`.
+        _medications = meds;
         _labTests = labs;
         _profilePhoto = photoBytes;
       });
@@ -172,12 +184,8 @@ class _AppRootState extends State<AppRoot> {
               startDate: med.startDate,
               endDate: med.endDate,
               isLifetime: med.isLifetime,
+              isHistory: med.isHistory,
             )));
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${med.name} added. Reminders will be sent via push notification.')),
-              );
-            }
           } catch (e) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -304,7 +312,7 @@ class _AppRootState extends State<AppRoot> {
       case 'chatbot':
         return ChatbotScreen(onBack: () => _navigate('home'), profilePhoto: _profilePhoto);
       case 'account':
-        return AccountScreen(userName: _userName, onLogout: _handleLogout, onBack: () => _navigate('home'), appointments: _appointments, profilePhoto: _profilePhoto, onProfilePhotoChanged: (bytes) => setState(() => _profilePhoto = bytes));
+        return AccountScreen(userName: _userName, onLogout: _handleLogout, onBack: () => _navigate('home'), appointments: _appointments, profilePhoto: _profilePhoto, onProfilePhotoChanged: (bytes) => setState(() => _profilePhoto = bytes), themeMode: widget.themeMode, onThemeModeChanged: widget.onThemeModeChanged);
       default:
         return HomeScreen(userName: _userName, onNavigate: _navigate, medications: _medications, appointments: _appointments, labTests: _labTests, profilePhoto: _profilePhoto);
     }
@@ -331,6 +339,10 @@ class _AppRootState extends State<AppRoot> {
       );
     }
 
+    // System inset (gesture bar / 3-button area) so the floating buttons
+    // sit above the bottom nav consistently across devices.
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
     return Scaffold(
       body: Stack(children: [
         Positioned.fill(child: _buildPage()),
@@ -340,7 +352,8 @@ class _AppRootState extends State<AppRoot> {
         ),
         if (_currentPage != 'chatbot' && _currentPage != 'account')
           Positioned(
-            bottom: 96, right: 16,
+            bottom: 96 + bottomInset,
+            right: 16,
             child: FloatingButtons(
               currentPage: _currentPage,
               onAddMedication: _openAddMedication,

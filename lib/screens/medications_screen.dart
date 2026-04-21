@@ -7,6 +7,7 @@ import '../models/app_models.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/edit_medication_dialog.dart';
+import '../theme/app_theme.dart';
 
 class MedicationsScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -32,6 +33,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
   int? _expandedMed;
   int? _expandedLab;
   int? _scheduleOpenMed;
+  int? _expandedHistoryMed;
   Timer? _tickTimer;
 
   @override
@@ -107,8 +109,12 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       builder: (_) => EditMedicationDialog(
         medication: med,
         onSave: (updated) {
-          final meds = List<Medication>.from(widget.medications);
-          meds[index] = updated;
+          // Replace by id — `index` is into the filtered active list,
+          // not into widget.medications.
+          final meds = widget.medications.map((m) {
+            if (m.id != null && m.id == med.id) return updated;
+            return m;
+          }).toList();
           widget.onMedicationsChanged(meds);
         },
       ),
@@ -163,35 +169,59 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Medications
-                const Text('MEDICATIONS',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF9CA3AF),
-                        letterSpacing: 1.2)),
-                const SizedBox(height: 10),
-                ...widget.medications
-                    .asMap()
-                    .entries
-                    .map((e) => _buildMedCard(e.key, e.value)),
+              children: () {
+                final activeMeds = widget.medications
+                    .where((m) => !m.isPastOrHistory)
+                    .toList();
+                final historyMeds = widget.medications
+                    .where((m) => m.isPastOrHistory)
+                    .toList();
 
-                const SizedBox(height: 20),
+                return [
+                  // Active medications
+                  Text('MEDICATIONS',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMuted(context),
+                          letterSpacing: 1.2)),
+                  const SizedBox(height: 10),
+                  ...activeMeds
+                      .asMap()
+                      .entries
+                      .map((e) => _buildMedCard(e.key, e.value)),
 
-                // Lab Tests
-                const Text('LAB TEST RESULTS',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF9CA3AF),
-                        letterSpacing: 1.2)),
-                const SizedBox(height: 10),
-                ...widget.labTests
-                    .asMap()
-                    .entries
-                    .map((e) => _buildLabCard(e.key, e.value)),
-              ],
+                  const SizedBox(height: 20),
+
+                  // Lab Tests
+                  Text('LAB TEST RESULTS',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMuted(context),
+                          letterSpacing: 1.2)),
+                  const SizedBox(height: 10),
+                  ...widget.labTests
+                      .asMap()
+                      .entries
+                      .map((e) => _buildLabCard(e.key, e.value)),
+
+                  const SizedBox(height: 20),
+
+                  // Medication History
+                  Text('MEDICATION HISTORY',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMuted(context),
+                          letterSpacing: 1.2)),
+                  const SizedBox(height: 10),
+                  ...historyMeds
+                      .asMap()
+                      .entries
+                      .map((e) => _buildHistoryMedCard(e.key, e.value)),
+                ];
+              }(),
             ),
           ),
         ],
@@ -199,17 +229,39 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     );
   }
 
-  // ── Med Card ──────────────────────────────────────────────────────────────
-  Widget _buildMedCard(int index, Medication med) {
-    final isExpanded = _expandedMed == index;
-    final scheduleOpen = _scheduleOpenMed == index;
+  // ── Med Card (active) ────────────────────────────────────────────────────
+  Widget _buildMedCard(int index, Medication med) =>
+      _buildMedCardCommon(index, med, isHistorySection: false);
+
+  /// Shared card builder for active & history meds so the designs match.
+  Widget _buildMedCardCommon(int index, Medication med,
+      {required bool isHistorySection}) {
+    final isExpanded = isHistorySection
+        ? _expandedHistoryMed == index
+        : _expandedMed == index;
+    final scheduleOpen =
+        !isHistorySection && _scheduleOpenMed == index;
+
+    void toggleExpand() {
+      setState(() {
+        if (isHistorySection) {
+          _expandedHistoryMed = isExpanded ? null : index;
+        } else {
+          _expandedMed = isExpanded ? null : index;
+        }
+      });
+    }
+
+    final subtitle = med.isPrn
+        ? 'As needed${med.dosage.isNotEmpty ? ' • ${med.dosage}' : ''}'
+        : '${med.dosage}${med.dosage.isNotEmpty && med.computedFrequency.isNotEmpty ? ' • ' : ''}${med.computedFrequency}';
 
     return GestureDetector(
-      onTap: () => setState(() => _expandedMed = isExpanded ? null : index),
+      onTap: toggleExpand,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surface(context),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -229,10 +281,15 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(14)),
-                    child:
-                        const Icon(Icons.medication, color: Color(0xFF2563EB)),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF3B82F6), Color(0xFF6366F1)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.medication_rounded,
+                        color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -240,49 +297,88 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(med.name,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF111418),
+                                color: AppColors.textPrimary(context),
                                 fontSize: 15)),
-                        Text('${med.dosage} • ${med.frequency}',
-                            style: const TextStyle(
-                                color: Color(0xFF6B7280), fontSize: 13)),
-                        Builder(builder: (_) {
-                          final next = NotificationService.nextReminderTime(med);
-                          if (next == null) return const SizedBox.shrink();
-                          final diff = next.difference(DateTime.now());
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.notifications_active,
-                                    size: 13, color: Color(0xFFF97316)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Next reminder in ${_formatCountdown(diff)}',
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFFF97316),
-                                      fontWeight: FontWeight.w500),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
+                        Text(subtitle,
+                            style: TextStyle(
+                                color: AppColors.textSecondary(context),
+                                fontSize: 13)),
+                        if (!isHistorySection)
+                          Builder(builder: (_) {
+                            final next =
+                                NotificationService.nextReminderTime(med);
+                            if (next == null) return const SizedBox.shrink();
+                            final diff = next.difference(DateTime.now());
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.notifications_active,
+                                      size: 13, color: Color(0xFF2563EB)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Next reminder in ${_formatCountdown(diff)}',
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF2563EB),
+                                        fontWeight: FontWeight.w500),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
                       ],
                     ),
                   ),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (!isHistorySection)
+                        _iconBtn(Icons.check_circle_outline,
+                            const Color(0xFF16A34A), () {
+                          // Move to history. Ends today, lifetime cleared,
+                          // schedule wiped (no more reminders).
+                          final today = DateTime.now();
+                          final endToday =
+                              DateTime(today.year, today.month, today.day);
+                          final updated = widget.medications.map((m) {
+                            if (m.id != null && m.id == med.id) {
+                              return m.copyWith(
+                                isHistory: true,
+                                isLifetime: false,
+                                endDate: endToday,
+                                schedule: [],
+                              );
+                            }
+                            return m;
+                          }).toList();
+                          if (_expandedMed == index) {
+                            setState(() => _expandedMed = null);
+                          }
+                          widget.onMedicationsChanged(updated);
+                        }),
                       _iconBtn(Icons.edit_outlined, const Color(0xFF2563EB),
                           () => _openEditDialog(index, med)),
                       _iconBtn(Icons.delete_outline, const Color(0xFF2563EB),
-                          () {
-                        final meds = List<Medication>.from(widget.medications)
-                          ..removeAt(index);
-                        if (_expandedMed == index) {
-                          setState(() => _expandedMed = null);
+                          () async {
+                        if (isHistorySection && med.id != null) {
+                          try {
+                            await ApiService.deleteMedication(med.id!);
+                          } catch (_) {}
+                        }
+                        final meds = widget.medications
+                            .where((m) => m.id == null || m.id != med.id)
+                            .toList();
+                        if (isHistorySection) {
+                          if (_expandedHistoryMed == index) {
+                            setState(() => _expandedHistoryMed = null);
+                          }
+                        } else {
+                          if (_expandedMed == index) {
+                            setState(() => _expandedMed = null);
+                          }
                         }
                         widget.onMedicationsChanged(meds);
                       }),
@@ -294,21 +390,92 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
               // Expanded section
               if (isExpanded) ...[
                 const SizedBox(height: 14),
-                const Divider(color: Color(0xFFF3F4F6), height: 1),
+                Divider(color: AppColors.border(context), height: 1),
                 const SizedBox(height: 14),
 
-                _buildScheduleSection(index, med, scheduleOpen),
-                const SizedBox(height: 12),
-                _buildDurationSection(med),
+                // Schedule: PRN shows a static label; otherwise the normal
+                // collapsible schedule. For history we render it flat.
+                if (med.isPrn)
+                  _buildPrnScheduleRow()
+                else if (isHistorySection)
+                  _buildHistoryScheduleBlock(med)
+                else
+                  _buildScheduleSection(index, med, scheduleOpen),
+
+                if (!med.isPrn) ...[
+                  const SizedBox(height: 12),
+                  _buildDurationSection(med),
+                  const SizedBox(height: 10),
+                  _expandedText('Frequency',
+                      med.computedFrequency.isNotEmpty
+                          ? med.computedFrequency
+                          : '—'),
+                ],
                 const SizedBox(height: 10),
-                _expandedText('Purpose', med.purpose),
+                _expandedText('Purpose',
+                    med.purpose.isNotEmpty ? med.purpose : '—'),
                 const SizedBox(height: 10),
-                _expandedText('Possible Side Effects', med.sideEffects),
+                _expandedText('Possible Side Effects',
+                    med.sideEffects.isNotEmpty ? med.sideEffects : '—'),
               ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// Inline read-only schedule block for history meds — shows all days/times
+  /// at once (not collapsible).
+  Widget _buildHistoryScheduleBlock(Medication med) {
+    final hasSchedule =
+        med.schedule != null && med.schedule!.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.access_time,
+                size: 16, color: Color(0xFF2563EB)),
+            const SizedBox(width: 8),
+            Text('Schedule',
+                style: TextStyle(
+                    fontSize: 11, color: AppColors.textMuted(context))),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (hasSchedule)
+          ...med.schedule!.map(_buildDayRow)
+        else
+          Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: Text(med.time.isNotEmpty ? med.time : '—',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary(context))),
+          ),
+      ],
+    );
+  }
+
+  /// Static "Taken when needed" row used under Schedule for PRN meds.
+  Widget _buildPrnScheduleRow() {
+    return Row(
+      children: [
+        const Icon(Icons.access_time, size: 16, color: Color(0xFF2563EB)),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Schedule',
+                style: TextStyle(
+                    fontSize: 11, color: AppColors.textMuted(context))),
+            Text('Taken when needed',
+                style: TextStyle(
+                    fontSize: 14, color: AppColors.textPrimary(context))),
+          ],
+        ),
+      ],
     );
   }
 
@@ -329,13 +496,13 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Schedule',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                  Text('Schedule',
+                      style: TextStyle(fontSize: 11, color: AppColors.textMuted(context))),
                   if (!hasSchedule)
                     Text(
                       med.time.isNotEmpty ? med.time : '—',
-                      style: const TextStyle(
-                          fontSize: 14, color: Color(0xFF111418)),
+                      style: TextStyle(
+                          fontSize: 14, color: AppColors.textPrimary(context)),
                     ),
                 ],
               ),
@@ -344,8 +511,8 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                 AnimatedRotation(
                   turns: isOpen ? 0.5 : 0,
                   duration: const Duration(milliseconds: 200),
-                  child: const Icon(Icons.keyboard_arrow_down,
-                      color: Color(0xFF6B7280), size: 20),
+                  child: Icon(Icons.keyboard_arrow_down,
+                      color: AppColors.textSecondary(context), size: 20),
                 ),
             ],
           ),
@@ -408,7 +575,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface(context),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFBFDBFE)),
       ),
@@ -433,15 +600,15 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: AppColors.surfaceAlt(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: AppColors.border(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Duration',
-              style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+          Text('Duration',
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted(context))),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -449,27 +616,27 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('From',
+                    Text('From',
                         style:
-                            TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                            TextStyle(fontSize: 11, color: AppColors.textSecondary(context))),
                     const SizedBox(height: 2),
                     Text(fromStr,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
-                            color: Color(0xFF111418))),
+                            color: AppColors.textPrimary(context))),
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward,
-                  size: 16, color: Color(0xFF9CA3AF)),
+              Icon(Icons.arrow_forward,
+                  size: 16, color: AppColors.textMuted(context)),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    const Text('To',
+                    Text('To',
                         style:
-                            TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                            TextStyle(fontSize: 11, color: AppColors.textSecondary(context))),
                     const SizedBox(height: 2),
                     isLifetime
                         ? const Row(
@@ -486,10 +653,10 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                             ],
                           )
                         : Text(toStr,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
-                                color: Color(0xFF111418))),
+                                color: AppColors.textPrimary(context))),
                   ],
                 ),
               ),
@@ -512,7 +679,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surface(context),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -531,10 +698,15 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(14)),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF3B82F6), Color(0xFF6366F1)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     child: const Icon(Icons.description_outlined,
-                        color: Color(0xFF2563EB)),
+                        color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -542,13 +714,13 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(lab.name,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF111418),
+                                color: AppColors.textPrimary(context),
                                 fontSize: 15)),
                         Text(lab.date,
-                            style: const TextStyle(
-                                color: Color(0xFF6B7280), fontSize: 13)),
+                            style: TextStyle(
+                                color: AppColors.textSecondary(context), fontSize: 13)),
                       ],
                     ),
                   ),
@@ -559,11 +731,11 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
+                            color: AppColors.tint(context),
                             borderRadius: BorderRadius.circular(8)),
-                        child: const Text('File',
+                        child: Text('File',
                             style: TextStyle(
-                                color: Color(0xFF2563EB),
+                                color: AppColors.accent(context),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600)),
                       ),
@@ -583,7 +755,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
               ),
               if (isExpanded) ...[
                 const SizedBox(height: 14),
-                const Divider(color: Color(0xFFF3F4F6), height: 1),
+                Divider(color: AppColors.border(context), height: 1),
                 const SizedBox(height: 14),
                 _expandedText('Ordered by', lab.doctor),
                 const SizedBox(height: 10),
@@ -615,7 +787,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
+                        color: AppColors.surfaceAlt(context),
                         borderRadius: BorderRadius.circular(12)),
                     child: const Row(
                       children: [
@@ -636,8 +808,16 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     );
   }
 
+  // ── History card (shares design with active cards) ───────────────────────
+  Widget _buildHistoryMedCard(int index, Medication med) =>
+      _buildMedCardCommon(index, med, isHistorySection: true);
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   Widget _iconBtn(IconData icon, Color color, VoidCallback onTap) {
+    // Default brand blue reroutes to the theme-aware accent so it stays
+    // legible on dark backgrounds.
+    final iconColor =
+        color == const Color(0xFF2563EB) ? AppColors.accent(context) : color;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -645,9 +825,9 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
         height: 34,
         margin: const EdgeInsets.only(left: 4),
         decoration: BoxDecoration(
-            color: const Color(0xFFEFF6FF),
+            color: AppColors.tint(context),
             borderRadius: BorderRadius.circular(8)),
-        child: Icon(icon, color: color, size: 18),
+        child: Icon(icon, color: iconColor, size: 18),
       ),
     );
   }
@@ -657,10 +837,10 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+            style: TextStyle(fontSize: 11, color: AppColors.textMuted(context))),
         const SizedBox(height: 2),
         Text(value,
-            style: const TextStyle(fontSize: 14, color: Color(0xFF111418))),
+            style: TextStyle(fontSize: 14, color: AppColors.textPrimary(context))),
       ],
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/app_models.dart';
+import '../theme/app_theme.dart';
 
 class AddLabTestDialog extends StatefulWidget {
   final void Function(LabTest, {Uint8List? fileBytes, String? pickedFileName}) onAdd;
@@ -43,8 +44,8 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
       fileBytes: _pickedFileBytes,
       pickedFileName: _pickedFileName,
     );
-    setState(() => _showSuccess = true);
-    Future.delayed(const Duration(milliseconds: 1500), () { if (mounted) Navigator.pop(context); });
+    // Close the dialog immediately — no success popup.
+    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -79,7 +80,11 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Upload Results (Optional)', style: TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
+                      Text('Upload Results (Optional)',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textPrimary(context),
+                              fontWeight: FontWeight.w500)),
                       const SizedBox(height: 6),
                       GestureDetector(
                         onTap: _pickFile,
@@ -87,15 +92,18 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF9FAFB),
-                            border: Border.all(color: _pickedFileName != null ? const Color(0xFF2563EB) : const Color(0xFFE5E7EB)),
+                            color: AppColors.surfaceAlt(context),
+                            border: Border.all(
+                                color: _pickedFileName != null
+                                    ? const Color(0xFF2563EB)
+                                    : AppColors.border(context)),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 _pickedFileName != null ? Icons.check_circle : Icons.upload_file,
-                                color: const Color(0xFF1976D2),
+                                color: AppColors.accent(context),
                                 size: 20,
                               ),
                               const SizedBox(width: 8),
@@ -103,7 +111,9 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                                 child: Text(
                                   _pickedFileName ?? 'Choose file',
                                   style: TextStyle(
-                                    color: _pickedFileName != null ? const Color(0xFF111418) : const Color(0xFF6B7280),
+                                    color: _pickedFileName != null
+                                        ? AppColors.textPrimary(context)
+                                        : AppColors.textMuted(context),
                                     fontSize: 14,
                                   ),
                                   overflow: TextOverflow.ellipsis,
@@ -112,7 +122,9 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                               if (_pickedFileName != null)
                                 GestureDetector(
                                   onTap: () => setState(() { _pickedFileName = null; _pickedFileBytes = null; }),
-                                  child: const Icon(Icons.close, size: 18, color: Color(0xFF6B7280)),
+                                  child: Icon(Icons.close,
+                                      size: 18,
+                                      color: AppColors.textMuted(context)),
                                 ),
                             ],
                           ),
@@ -120,20 +132,6 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                       ),
                     ],
                   ),
-                  if (_showSuccess) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: const Color(0xFFF0FDF4), border: Border.all(color: const Color(0xFF86EFAC)), borderRadius: BorderRadius.circular(12)),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 18),
-                          SizedBox(width: 8),
-                          Text('Lab test added successfully!', style: TextStyle(color: Color(0xFF15803D), fontSize: 13)),
-                        ],
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,
@@ -161,11 +159,12 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
+        Text(label, style: TextStyle(fontSize: 13, color: AppColors.textPrimary(context), fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
           readOnly: true,
+          style: TextStyle(color: AppColors.textPrimary(context)),
           onTap: () async {
             final picked = await showDatePicker(
               context: context,
@@ -179,10 +178,11 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
           },
           decoration: InputDecoration(
             hintText: 'Tap to select date',
-            suffixIcon: const Icon(Icons.calendar_today, size: 18, color: Color(0xFF6B7280)),
-            filled: true, fillColor: const Color(0xFFF9FAFB),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            hintStyle: TextStyle(color: AppColors.textMuted(context)),
+            suffixIcon: Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary(context)),
+            filled: true, fillColor: AppColors.surfaceAlt(context),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border(context))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border(context))),
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),
@@ -194,14 +194,15 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF111418), fontWeight: FontWeight.w500)),
+        Text(label, style: TextStyle(fontSize: 13, color: AppColors.textPrimary(context), fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
+          style: TextStyle(color: AppColors.textPrimary(context)),
           decoration: InputDecoration(
-            hintText: hint, filled: true, fillColor: const Color(0xFFF9FAFB),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            hintText: hint, hintStyle: TextStyle(color: AppColors.textMuted(context)), filled: true, fillColor: AppColors.surfaceAlt(context),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border(context))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border(context))),
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),

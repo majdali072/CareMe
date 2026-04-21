@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/app_models.dart';
+import '../theme/app_theme.dart';
 
 class EditMedicationDialog extends StatefulWidget {
   final Medication medication;
@@ -28,6 +29,8 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
   DateTime? _startDate;
   DateTime? _endDate;
   bool _isLifetime = false;
+  bool _isHistory = false;
+  bool _isPrn = false;
 
   static const List<String> _weekDays = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday',
@@ -54,6 +57,8 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
     _startDate = m.startDate;
     _endDate = m.endDate;
     _isLifetime = m.isLifetime ?? false;
+    _isHistory = m.isHistory;
+    _isPrn = m.isPrn;
   }
 
   @override
@@ -137,19 +142,160 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
   }
 
   void _save() {
+    // Auto-compute frequency from schedule (or "As needed" for PRN).
+    String freq;
+    if (_isPrn) {
+      freq = 'As needed';
+    } else {
+      final totalTimes =
+          _schedule.fold<int>(0, (sum, e) => sum + e.times.length);
+      final daysWithTimes = _schedule.where((e) => e.times.isNotEmpty).length;
+      if (totalTimes == 0) {
+        freq = '';
+      } else if (daysWithTimes == 7) {
+        if (totalTimes % 7 == 0) {
+          final n = totalTimes ~/ 7;
+          freq = n == 1 ? 'Daily' : 'Daily, $n× per day';
+        } else {
+          freq = 'Daily, ~${(totalTimes / 7).toStringAsFixed(1)}× per day';
+        }
+      } else {
+        final timeWord = totalTimes == 1 ? 'time' : 'times';
+        final dayWord = daysWithTimes == 1 ? 'day' : 'days';
+        freq = '$totalTimes $timeWord per week ($daysWithTimes $dayWord)';
+      }
+    }
+
     final updated = widget.medication.copyWith(
       name: _name.text.trim(),
       dosage: _dosage.text.trim(),
-      frequency: _frequency.text.trim(),
+      frequency: freq,
       purpose: _purpose.text.trim(),
       sideEffects: _sideEffects.text.trim(),
-      schedule: _schedule,
-      startDate: _startDate,
-      endDate: _isLifetime ? null : _endDate,
-      isLifetime: _isLifetime,
+      schedule: _isPrn ? [] : _schedule,
+      startDate: _isPrn ? null : _startDate,
+      endDate: _isPrn ? null : (_isLifetime ? null : _endDate),
+      isLifetime: _isPrn ? false : _isLifetime,
+      isHistory: _isHistory,
+      isPrn: _isPrn,
     );
     widget.onSave(updated);
     Navigator.pop(context);
+  }
+
+  Widget _prnCheckbox() {
+    return GestureDetector(
+      onTap: () => setState(() {
+        _isPrn = !_isPrn;
+        if (_isPrn) {
+          _schedule.clear();
+          _expandedDay = null;
+          _isLifetime = false;
+        }
+      }),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _isPrn
+              ? AppColors.tint(context)
+              : AppColors.surfaceAlt(context),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _isPrn
+                ? const Color(0xFF2563EB)
+                : AppColors.border(context),
+            width: _isPrn ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: _isPrn ? const Color(0xFF2563EB) : Colors.white,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: _isPrn
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFFD1D5DB),
+                  width: 1.5,
+                ),
+              ),
+              child: _isPrn
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Taken when needed',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary(context))),
+                  const SizedBox(height: 2),
+                  Text(
+                      'No schedule or reminders. Use for as-needed meds like painkillers.',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textMuted(context))),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusToggle() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border(context)),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _statusOption(label: 'Active', isHistory: false)),
+          Expanded(child: _statusOption(label: 'History', isHistory: true)),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusOption({required String label, required bool isHistory}) {
+    final selected = _isHistory == isHistory;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isHistory = isHistory;
+          if (_isHistory) _isLifetime = false;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF2563EB) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : AppColors.textSecondary(context),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -199,7 +345,6 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
             // Basic fields
             _field('Name', _name),
             _field('Dosage', _dosage),
-            _field('Frequency', _frequency),
             _field('Purpose', _purpose),
             _field('Possible Side Effects', _sideEffects, maxLines: 2),
 
@@ -207,124 +352,193 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
             const Divider(),
             const SizedBox(height: 12),
 
-            // Schedule section
-            Row(
-              children: [
-                const Text('Schedule',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: Color(0xFF111418))),
-                const Spacer(),
-                GestureDetector(
-                  onTap: _addDay,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
+            // Status (Active / History)
+            Text('Status',
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: AppColors.textPrimary(context))),
+            const SizedBox(height: 8),
+            _statusToggle(),
+            const SizedBox(height: 14),
+
+            // Taken-When-Needed (PRN)
+            _prnCheckbox(),
+            const SizedBox(height: 20),
+
+            // Schedule section (locked when History or PRN)
+            AnimatedOpacity(
+              opacity: (_isHistory || _isPrn) ? 0.4 : 1,
+              duration: const Duration(milliseconds: 200),
+              child: IgnorePointer(
+                ignoring: _isHistory || _isPrn,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Icon(Icons.add, size: 14, color: Color(0xFF2563EB)),
-                        SizedBox(width: 4),
-                        Text('Add Day',
+                        Text('Schedule',
                             style: TextStyle(
-                                color: Color(0xFF2563EB),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600)),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: AppColors.textPrimary(context))),
+                        if (_isHistory || _isPrn) ...[
+                          const SizedBox(width: 6),
+                          Icon(Icons.lock_outline,
+                              size: 14, color: AppColors.textMuted(context)),
+                        ],
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: _addDay,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppColors.tint(context),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.add,
+                                    size: 14,
+                                    color: AppColors.accent(context)),
+                                const SizedBox(width: 4),
+                                Text('Add Day',
+                                    style: TextStyle(
+                                        color: AppColors.accent(context),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
+                    const SizedBox(height: 10),
 
-            if (_schedule.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9FAFB),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                    if (_schedule.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceAlt(context),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.border(context)),
+                        ),
+                        child: Center(
+                          child: Text('No days added yet',
+                              style: TextStyle(
+                                  color: AppColors.textMuted(context),
+                                  fontSize: 13)),
+                        ),
+                      )
+                    else
+                      ..._schedule
+                          .asMap()
+                          .entries
+                          .map((e) => _buildScheduleRow(e.key, e.value)),
+                  ],
                 ),
-                child: const Center(
-                  child: Text('No days added yet',
-                      style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
-                ),
-              )
-            else
-              ..._schedule.asMap().entries.map((e) => _buildScheduleRow(e.key, e.value)),
+              ),
+            ),
 
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 12),
 
-            // Duration section
-            const Text('Duration',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: Color(0xFF111418))),
-            const SizedBox(height: 10),
-
-            _dateTile(
-              label: 'From',
-              date: _startDate,
-              onTap: () async {
-                final d = await _pickDate(_startDate);
-                if (d != null) setState(() => _startDate = d);
-              },
-            ),
-            const SizedBox(height: 8),
-
+            // Duration section (locked when PRN)
             AnimatedOpacity(
-              opacity: _isLifetime ? 0.4 : 1,
+              opacity: _isPrn ? 0.4 : 1,
               duration: const Duration(milliseconds: 200),
               child: IgnorePointer(
-                ignoring: _isLifetime,
-                child: _dateTile(
-                  label: 'To',
-                  date: _endDate,
-                  onTap: () async {
-                    final d = await _pickDate(_endDate);
-                    if (d != null) setState(() => _endDate = d);
-                  },
+                ignoring: _isPrn,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('Duration',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: AppColors.textPrimary(context))),
+                        if (_isPrn) ...[
+                          const SizedBox(width: 6),
+                          Icon(Icons.lock_outline,
+                              size: 14, color: AppColors.textMuted(context)),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    _dateTile(
+                      label: 'From',
+                      date: _startDate,
+                      onTap: () async {
+                        final d = await _pickDate(_startDate);
+                        if (d != null) setState(() => _startDate = d);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+
+                    AnimatedOpacity(
+                      opacity: _isLifetime ? 0.4 : 1,
+                      duration: const Duration(milliseconds: 200),
+                      child: IgnorePointer(
+                        ignoring: _isLifetime,
+                        child: _dateTile(
+                          label: 'To',
+                          date: _endDate,
+                          onTap: () async {
+                            final d = await _pickDate(_endDate);
+                            if (d != null) setState(() => _endDate = d);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                 ),
               ),
             ),
 
-            const SizedBox(height: 10),
-
-            GestureDetector(
-              onTap: () => setState(() => _isLifetime = !_isLifetime),
-              child: Row(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: _isLifetime ? const Color(0xFF2563EB) : Colors.white,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: _isLifetime
-                            ? const Color(0xFF2563EB)
-                            : const Color(0xFFD1D5DB),
-                        width: 1.5,
+            Opacity(
+              opacity: (_isHistory || _isPrn) ? 0.4 : 1,
+              child: GestureDetector(
+                onTap: (_isHistory || _isPrn)
+                    ? null
+                    : () => setState(() => _isLifetime = !_isLifetime),
+                child: Row(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: _isLifetime ? const Color(0xFF2563EB) : Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: _isLifetime
+                              ? const Color(0xFF2563EB)
+                              : const Color(0xFFD1D5DB),
+                          width: 1.5,
+                        ),
                       ),
+                      child: _isLifetime
+                          ? const Icon(Icons.check, size: 14, color: Colors.white)
+                          : null,
                     ),
-                    child: _isLifetime
-                        ? const Icon(Icons.check, size: 14, color: Colors.white)
-                        : null,
-                  ),
-                  const SizedBox(width: 10),
-                  const Icon(Icons.all_inclusive, size: 16, color: Color(0xFF2563EB)),
-                  const SizedBox(width: 6),
-                  const Text('Lifetime medication',
-                      style: TextStyle(fontSize: 14, color: Color(0xFF111418))),
-                ],
+                    const SizedBox(width: 10),
+                    const Icon(Icons.all_inclusive, size: 16, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 6),
+                    Text('Lifetime medication',
+                        style: TextStyle(fontSize: 14, color: AppColors.textPrimary(context))),
+                    if (_isHistory || _isPrn) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.lock_outline,
+                          size: 14, color: AppColors.textMuted(context)),
+                    ],
+                  ],
+                ),
               ),
             ),
 
@@ -378,7 +592,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: AppColors.surfaceAlt(context),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
@@ -393,10 +607,10 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                   const Icon(Icons.calendar_today, size: 14, color: Color(0xFF2563EB)),
                   const SizedBox(width: 8),
                   Text(entry.day,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
-                          color: Color(0xFF111418))),
+                          color: AppColors.textPrimary(context))),
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -479,17 +693,17 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: AppColors.tint(context),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.add_alarm, size: 14, color: Color(0xFF2563EB)),
-                          SizedBox(width: 4),
+                          Icon(Icons.add_alarm, size: 14, color: AppColors.accent(context)),
+                          const SizedBox(width: 4),
                           Text('Add Time',
                               style: TextStyle(
-                                  color: Color(0xFF2563EB),
+                                  color: AppColors.accent(context),
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600)),
                         ],
@@ -518,9 +732,9 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF9FAFB),
+          color: AppColors.surfaceAlt(context),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: AppColors.border(context)),
         ),
         child: Row(
           children: [
@@ -528,7 +742,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                 size: 18, color: Color(0xFF2563EB)),
             const SizedBox(width: 10),
             Text(label,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                style: TextStyle(fontSize: 13, color: AppColors.textPrimary(context))),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -538,12 +752,12 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: date != null
-                        ? const Color(0xFF111418)
-                        : const Color(0xFF9CA3AF)),
+                        ? AppColors.textPrimary(context)
+                        : AppColors.textMuted(context)),
               ),
             ),
             const SizedBox(width: 6),
-            const Icon(Icons.chevron_right, size: 16, color: Color(0xFF9CA3AF)),
+            Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted(context)),
           ],
         ),
       ),
@@ -557,27 +771,27 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF6B7280),
+                  color: AppColors.textPrimary(context),
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 4),
           TextField(
             controller: ctrl,
             maxLines: maxLines,
-            style: const TextStyle(fontSize: 14),
+            style: TextStyle(fontSize: 14, color: AppColors.textPrimary(context)),
             decoration: InputDecoration(
               filled: true,
-              fillColor: const Color(0xFFF9FAFB),
+              fillColor: AppColors.surfaceAlt(context),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                borderSide: BorderSide(color: AppColors.border(context)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                borderSide: BorderSide(color: AppColors.border(context)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),

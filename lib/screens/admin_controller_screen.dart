@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/country_phone_field.dart';
 import '../widgets/location_picker.dart';
+import '../theme/app_theme.dart';
 
 // ─── Admin Controller Screen ──────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
   // ── Add Dialog ───────────────────────────────────────────────────────────
   void _showAddDialog({required bool isDoctor}) {
     final nameCtrl = TextEditingController();
+    final specialtyCtrl = TextEditingController();
     final phoneCtrl = PhoneInputController();
     final formKey = GlobalKey<FormState>();
     SelectedLocation? pickedLocation;
@@ -152,6 +154,18 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                               ? 'Name is required'
                               : null,
                         ),
+                        if (isDoctor) ...[
+                          const SizedBox(height: 16),
+                          _FormField(
+                            label: 'Specialty',
+                            hint: 'e.g. Cardiology, Dermatology, Pediatrics',
+                            controller: specialtyCtrl,
+                            icon: Icons.medical_services_outlined,
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Specialty is required'
+                                : null,
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         StatefulBuilder(
                           builder: (ctx, setLocalState) => LocationAddressField(
@@ -214,6 +228,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                                   phone: phoneCtrl.fullPhone,
                                   latitude: pickedLocation!.latitude,
                                   longitude: pickedLocation!.longitude,
+                                  specialty: isDoctor ? specialtyCtrl.text.trim() : '',
                                 );
                                 try {
                                   final saved = isDoctor
@@ -286,7 +301,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
     // Rendered inside parent Scaffold/Stack (see main.dart). We use a plain
     // Stack so the FAB can float above the parent's AdminBottomNav (~68px).
     return Container(
-      color: const Color(0xFFF0F4FF),
+      color: AppColors.background(context),
       child: Stack(
         children: [
           Column(
@@ -451,7 +466,7 @@ class _EmptyHint extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+        style: TextStyle(fontSize: 13, color: AppColors.textMuted(context)),
       ),
     );
   }
@@ -467,10 +482,10 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       label,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 11,
         fontWeight: FontWeight.w700,
-        color: Color(0xFF64748B),
+        color: AppColors.textSecondary(context),
         letterSpacing: 1.5,
       ),
     );
@@ -493,7 +508,7 @@ class _ContactCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface(context),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -531,10 +546,10 @@ class _ContactCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         entry.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E293B),
+                          color: AppColors.textPrimary(context),
                         ),
                       ),
                     ),
@@ -553,6 +568,17 @@ class _ContactCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (entry.specialty.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    entry.specialty,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -562,8 +588,8 @@ class _ContactCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         entry.address,
-                        style: const TextStyle(
-                            fontSize: 12, color: Color(0xFF64748B)),
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.textSecondary(context)),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -577,8 +603,8 @@ class _ContactCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       entry.phone,
-                      style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary(context)),
                     ),
                   ],
                 ),
@@ -615,10 +641,10 @@ class _FormField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF374151),
+            color: AppColors.textSecondary(context),
           ),
         ),
         const SizedBox(height: 8),
@@ -626,24 +652,24 @@ class _FormField extends StatelessWidget {
           controller: controller,
           keyboardType: keyboardType,
           validator: validator,
-          style: const TextStyle(fontSize: 14, color: Color(0xFF1E293B)),
+          style: TextStyle(fontSize: 14, color: AppColors.textPrimary(context)),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle:
-                const TextStyle(color: Color(0xFFCBD5E1), fontSize: 14),
+                TextStyle(color: AppColors.textMuted(context), fontSize: 14),
             prefixIcon:
-                Icon(icon, size: 18, color: const Color(0xFF94A3B8)),
+                Icon(icon, size: 18, color: AppColors.textMuted(context)),
             filled: true,
-            fillColor: const Color(0xFFF8FAFC),
+            fillColor: AppColors.surfaceAlt(context),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              borderSide: BorderSide(color: AppColors.border(context)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              borderSide: BorderSide(color: AppColors.border(context)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),

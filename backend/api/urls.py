@@ -27,4 +27,5 @@ urlpatterns = [
     path('fcm/send-reminders/', views.send_medication_reminders),
     path('fcm/test/', views.test_fcm_notification),
     path('chat/', views.chat),
+    path('chat/stream/', views.chat_stream),
 ]

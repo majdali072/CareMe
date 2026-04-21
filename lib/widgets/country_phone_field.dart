@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 /// Shared country list used by phone inputs across the app.
 const List<Map<String, String>> kCountries = [
@@ -205,7 +206,7 @@ class _CountryPhoneFieldState extends State<CountryPhoneField> {
                               prefixIcon: const Icon(Icons.search,
                                   size: 20, color: Color(0xFF9CA3AF)),
                               filled: true,
-                              fillColor: const Color(0xFFF9FAFB),
+                              fillColor: AppColors.surfaceAlt(context),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(
@@ -310,10 +311,10 @@ class _CountryPhoneFieldState extends State<CountryPhoneField> {
                         style: const TextStyle(fontSize: 20)),
                     const SizedBox(width: 6),
                     Text(widget.controller.code,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF111418))),
+                            color: AppColors.textPrimary(context))),
                     const SizedBox(width: 4),
                     const Icon(Icons.keyboard_arrow_down,
                         size: 18, color: Color(0xFF6B7280)),
@@ -334,7 +335,7 @@ class _CountryPhoneFieldState extends State<CountryPhoneField> {
                   hintStyle: const TextStyle(
                       color: Color(0xFFCBD5E1), fontSize: 14),
                   filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
+                  fillColor: AppColors.surfaceAlt(context),
                   contentPadding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 14),
                   border: OutlineInputBorder(

@@ -3,14 +3,13 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
+import 'package:file_picker/file_picker.dart';
 import '../models/app_models.dart';
 import '../services/api_service.dart';
-import '../services/notification_service.dart';
 import '../widgets/location_picker.dart';
 import 'otp_verification_screen.dart';
 import 'change_password_screen.dart';
+import '../theme/app_theme.dart';
 
 class AccountScreen extends StatefulWidget {
   final String userName;
@@ -19,6 +18,8 @@ class AccountScreen extends StatefulWidget {
   final List<Appointment> appointments;
   final Uint8List? profilePhoto;
   final void Function(Uint8List?) onProfilePhotoChanged;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
 
   const AccountScreen({
     super.key,
@@ -28,6 +29,8 @@ class AccountScreen extends StatefulWidget {
     required this.appointments,
     this.profilePhoto,
     required this.onProfilePhotoChanged,
+    required this.themeMode,
+    required this.onThemeModeChanged,
   });
 
   @override
@@ -428,27 +431,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       'Security & Privacy',
                       'Password, privacy controls',
                       () => setState(() => _showSecurity = true)),
-                  _buildNavRow(
-                      Icons.notifications_active_outlined,
-                      const Color(0xFFF97316),
-                      'Test Notifications',
-                      'Send a test push notification',
-                      () async {
-                        try {
-                          final result = await NotificationService.sendTestNotification();
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(result)),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error: $e')),
-                            );
-                          }
-                        }
-                      }),
+                  _buildThemeToggleRow(),
                 ]),
                 const SizedBox(height: 14),
                 _buildSection('Support', [
@@ -546,7 +529,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppColors.surface(context),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
@@ -571,7 +554,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                     color: const Color(0xFF1976D2),
                                     borderRadius: BorderRadius.circular(15),
                                     border: Border.all(
-                                        color: Colors.white, width: 2)),
+                                        color: AppColors.surface(context), width: 2)),
                                 child: const Icon(Icons.camera_alt,
                                     color: Colors.white, size: 14),
                               ),
@@ -602,6 +585,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       builder: (ctx, setLocalState) => LocationAddressField(
                         label: 'Address',
                         value: draftLocation,
+                        autoDetect: true,
                         onChanged: (loc) =>
                             setLocalState(() => draftLocation = loc),
                       ),
@@ -692,6 +676,7 @@ class _AccountScreenState extends State<AccountScreen> {
       final appointmentMaps = widget.appointments
           .map((a) => {
                 'date': a.date,
+                'fullDate': a.fullDate?.toIso8601String(),
                 'title': a.title,
                 'time': a.time,
                 'type': a.type,
@@ -700,16 +685,35 @@ class _AccountScreenState extends State<AccountScreen> {
           .toList();
 
       final bytes = await ApiService.exportData(appointmentMaps);
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File(p.join(dir.path, 'CareMe_MyData.pdf'));
-      await file.writeAsBytes(bytes);
 
       if (!mounted) return;
       Navigator.of(context).pop(); // dismiss loading
 
+      // Let the user pick where to save — native system save dialog.
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save your health data',
+        fileName: 'CareMe_MyData.pdf',
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        bytes: bytes,
+      );
+
+      if (savePath == null) {
+        // User cancelled the save dialog
+        return;
+      }
+
+      // On Android/iOS the file_picker plugin writes bytes itself when
+      // `bytes:` is supplied. On desktop it only returns the path, so we
+      // need to write ourselves.
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        await File(savePath).writeAsBytes(bytes);
+      }
+
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('PDF saved to ${file.path}'),
+          content: Text('Saved to $savePath'),
           backgroundColor: const Color(0xFF1E3A5F),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 4),
@@ -796,7 +800,7 @@ class _AccountScreenState extends State<AccountScreen> {
   Widget _termsBlock(String title, String content) {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: AppColors.border(context)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -805,17 +809,20 @@ class _AccountScreenState extends State<AccountScreen> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Text(title,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary(context))),
           ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(content,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                style: TextStyle(
+                    fontSize: 13, color: AppColors.textSecondary(context))),
           ),
         ],
       ),
@@ -859,9 +866,11 @@ class _AccountScreenState extends State<AccountScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Frequently Asked Questions',
+                    Text('Frequently Asked Questions',
                         style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: AppColors.textPrimary(context))),
                     const SizedBox(height: 12),
                     _faqItem('How do I add a medication?',
                         'Go to the Medications tab and tap the + button. Fill in the medication details and tap Save.'),
@@ -875,26 +884,33 @@ class _AccountScreenState extends State<AccountScreen> {
                         'Go to Settings > Security & Privacy > Deactivate Account. Your data is preserved and you can contact support to reactivate anytime.'),
                     _faqItem('Can I export my data?',
                         'Yes. Go to Settings > Security & Privacy > Download My Data to export your health records as a PDF.'),
-                    const Divider(height: 32),
-                    const Text('Contact Support',
+                    Divider(height: 32, color: AppColors.border(context)),
+                    Text('Contact Support',
                         style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: AppColors.textPrimary(context))),
                     const SizedBox(height: 12),
-                    const ListTile(
-                      leading:
-                          Icon(Icons.email_outlined, color: Color(0xFF2563EB)),
+                    ListTile(
+                      leading: const Icon(Icons.email_outlined,
+                          color: Color(0xFF2563EB)),
                       title: Text('Email',
                           style: TextStyle(
-                              fontWeight: FontWeight.w500, fontSize: 14)),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                              color: AppColors.textPrimary(context))),
                       subtitle: Text('support@careme.app',
-                          style: TextStyle(fontSize: 13)),
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSecondary(context))),
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                     ),
-                    const Divider(height: 32),
-                    const Text(
+                    Divider(height: 32, color: AppColors.border(context)),
+                    Text(
                       'Our support team typically responds within 24 hours.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                      style: TextStyle(
+                          fontSize: 12, color: AppColors.textMuted(context)),
                     ),
                   ],
                 ),
@@ -913,55 +929,101 @@ class _AccountScreenState extends State<AccountScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(question,
-              style: const TextStyle(
+              style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
-                  color: Color(0xFF111418))),
+                  color: AppColors.textPrimary(context))),
           const SizedBox(height: 4),
           Text(answer,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+              style: TextStyle(
+                  fontSize: 13, color: AppColors.textSecondary(context))),
         ],
       ),
     );
   }
 
-  static const String _termsText = '''1. Acceptance of Terms
-By accessing and using CareMe, you accept and agree to be bound by these Terms of Service.
+  static const String _termsText = '''Last updated: April 2026
 
-2. Description of Service
-CareMe is a healthcare management application that helps users track medications, lab test results, and medical appointments. It is not a substitute for professional medical advice.
+1. Acceptance of Terms
+By creating an account or otherwise using CareMe ("the App"), you confirm that you have read, understood, and agreed to be bound by these Terms of Service. If you do not agree, do not use the App.
 
-3. User Accounts
-You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.
+2. Eligibility
+You must be at least 18 years old, or use the App under the supervision of a parent or legal guardian. By using the App you represent that you meet these requirements.
+
+3. Description of Service
+CareMe is a personal health-management tool that lets you record and review your own medications, lab results, and appointments, set reminders, and chat with an AI assistant ("CareAI") for general wellness information. CareMe is provided "as is" and does not constitute medical advice, diagnosis, or treatment.
 
 4. Medical Disclaimer
-THE APP IS NOT A MEDICAL DEVICE AND DOES NOT PROVIDE MEDICAL ADVICE. Always seek the advice of your physician for any medical condition.
+THE APP IS NOT A MEDICAL DEVICE. Information shown — including content generated by CareAI — is for informational purposes only and is not a substitute for professional medical judgment. Always consult a qualified healthcare provider before starting, changing, or stopping any treatment. In case of a medical emergency call your local emergency number immediately; do not rely on the App.
 
-5. User Responsibilities
-You agree to use the App only for lawful purposes and are solely responsible for the accuracy of your health information.
+5. Account & Security
+You are responsible for keeping your credentials confidential and for all activity that occurs under your account. Notify us immediately at support@careme.app if you suspect unauthorized access. We may suspend or terminate accounts that violate these Terms or applicable law.
 
-6. Limitation of Liability
-IN NO EVENT SHALL CAREME BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT OF YOUR USE OF THE APP.''';
+6. User Content & Accuracy
+You retain ownership of the data you enter ("User Content"). You alone are responsible for the accuracy, completeness, and legality of that data. By submitting content you grant CareMe a limited licence to store and process it solely to operate the App for you.
 
-  static const String _privacyText = '''1. Information We Collect
-Personal Information: Name, email, phone, date of birth, and address. Health Information: Medication records, lab results, appointment details.
+7. Acceptable Use
+You agree not to: (a) misuse the App, attempt to disrupt our infrastructure, or reverse engineer it; (b) submit content you do not have the right to share; (c) use the App to harass, harm, or impersonate others; (d) rely on CareAI for emergency, diagnostic, or treatment decisions.
 
-2. How We Use Your Information
-To provide app functionality, send reminders, improve user experience, and ensure account security.
+8. Third-Party Services
+CareMe integrates with third-party services (e.g. Google Sign-In, Google Calendar, Google Maps, Google Generative Language API, Firebase Cloud Messaging). Your use of those services is governed by their own terms and privacy policies.
 
-3. Data Security
-We implement industry-standard security measures. Your data is encrypted in transit and at rest.
+9. Changes to the Service or Terms
+We may update the App or these Terms at any time. Material changes will be communicated through the App. Continued use after a change constitutes acceptance of the revised Terms.
 
-4. Data Sharing
-We do not sell, trade, or rent your personal or health information to third parties.
+10. Disclaimers & Limitation of Liability
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, CAREME AND ITS CONTRIBUTORS PROVIDE THE APP WITHOUT WARRANTIES OF ANY KIND AND ARE NOT LIABLE FOR ANY INDIRECT, INCIDENTAL, CONSEQUENTIAL, OR SPECIAL DAMAGES, INCLUDING LOSS OF DATA, ARISING FROM YOUR USE OF THE APP.
 
-5. Your Privacy Rights
-You have the right to access, correct, delete, and export your personal data at any time.
+11. Termination
+You may stop using the App at any time. We may suspend or terminate access where required by law or in response to misuse. You can deactivate your account from Settings → Security & Privacy.
 
-6. HIPAA Compliance
-This App is designed for personal use and is not a HIPAA-covered entity.
+12. Governing Law
+These Terms are governed by the laws of the user\'s country of residence, except where mandatory consumer-protection rules require otherwise.
 
-Contact: support@careme.app''';
+13. Contact
+Questions or concerns about these Terms: support@careme.app.''';
+
+  static const String _privacyText = '''Last updated: April 2026
+
+1. Who We Are
+CareMe ("we", "us") is the operator of the CareMe mobile application. This Privacy Policy explains what information we collect about you, how we use it, and the choices you have.
+
+2. Information We Collect
+- Account information: name, email address, hashed password, date of birth, country code, phone number, and home address (with optional GPS coordinates for finding nearby providers).
+- Health information you choose to record: medications, dosages, schedules, lab tests and uploaded files, appointments.
+- Authentication data: when you sign in with Google we receive your Google profile name and email; we do not access your contacts or other Google data unless you grant calendar sync.
+- Device data: a Firebase Cloud Messaging token used to deliver reminder notifications, and basic diagnostic logs.
+- Chat content: messages you send to CareAI and any files you attach are sent to Google\'s Generative Language API to produce a response.
+
+3. How We Use Your Information
+We use your data only to provide the App\'s features: storing your records, sending medication reminders, generating personalized AI responses, and securing your account. We do not use your health data for advertising.
+
+4. Legal Basis
+We process personal data based on (a) the contract between you and us when you accept these Terms and (b) your consent for optional features such as location services, push notifications, camera, calendar sync, and AI chat.
+
+5. Data Security
+Your password is stored using a one-way hash. Sensitive health fields (medication, lab data) are encrypted at rest with a server-managed key. All traffic between the App and our servers travels over HTTPS/TLS.
+
+6. Sharing & Third Parties
+We do not sell, rent, or trade your personal information. We share data only with the service providers strictly required to run the App — for example Google (Sign-In, Maps, Calendar, Generative Language API) and Firebase (push notifications). Each provider acts as our data processor and is bound by its own commitments.
+
+7. Data Retention
+We keep your data while your account is active. If you deactivate your account, your records are retained in a disabled state in case you wish to reactivate. You may request permanent deletion at any time by emailing support@careme.app.
+
+8. Your Rights
+Depending on your jurisdiction (e.g. GDPR for the EU/EEA, CCPA for California), you may have the right to access, correct, export, restrict, or delete your personal data. Use Settings → Security & Privacy → Download My Data to export, or contact us to exercise other rights.
+
+9. Children
+CareMe is not directed to children under 13 (or the relevant local minimum age). We do not knowingly collect data from such users. If you believe a child has created an account, please contact us so we can remove it.
+
+10. Health-Information Notice
+CareMe is intended for personal recordkeeping and is not a HIPAA-covered entity. Records you store are not subject to HIPAA, but we apply commercially reasonable safeguards to protect them.
+
+11. Changes to This Policy
+We may update this policy as the App evolves. Material changes will be highlighted in-app. The "Last updated" date at the top reflects the current version.
+
+12. Contact
+Privacy questions or requests: support@careme.app.''';
 
   void _showAbout() {
     showDialog(
@@ -1005,64 +1067,67 @@ Contact: support@careme.app''';
                         width: 80, height: 80),
                   ),
                   const SizedBox(height: 12),
-                  const Text('CareMe',
+                  Text('CareMe',
                       style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF111418))),
+                          color: AppColors.textPrimary(context))),
                   const SizedBox(height: 4),
-                  const Text('Version 1.0.0',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
+                  Text('Version 1.0.0',
+                      style: TextStyle(
+                          fontSize: 13, color: AppColors.textMuted(context))),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'CareMe is your personal health companion, designed to help you stay on top of your health by managing medications, tracking lab results, and organizing medical appointments — all in one place.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 13, color: Color(0xFF6B7280), height: 1.5),
+                        fontSize: 13,
+                        color: AppColors.textSecondary(context),
+                        height: 1.5),
                   ),
                   const SizedBox(height: 20),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF9FAFB),
+                      color: AppColors.surfaceAlt(context),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Column(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Key Features',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
-                                color: Color(0xFF111418))),
-                        SizedBox(height: 10),
-                        _FeatureRow(
+                                color: AppColors.textPrimary(context))),
+                        const SizedBox(height: 10),
+                        const _FeatureRow(
                             icon: Icons.medication_outlined,
                             color: Color(0xFF2563EB),
                             text: 'Medication tracking & reminders'),
-                        SizedBox(height: 8),
-                        _FeatureRow(
+                        const SizedBox(height: 8),
+                        const _FeatureRow(
                             icon: Icons.science_outlined,
                             color: Color(0xFF7C3AED),
                             text: 'Lab test records & file uploads'),
-                        SizedBox(height: 8),
-                        _FeatureRow(
+                        const SizedBox(height: 8),
+                        const _FeatureRow(
                             icon: Icons.calendar_month_outlined,
                             color: Color(0xFF16A34A),
                             text: 'Appointment scheduling'),
-                        SizedBox(height: 8),
-                        _FeatureRow(
+                        const SizedBox(height: 8),
+                        const _FeatureRow(
                             icon: Icons.smart_toy_outlined,
                             color: Color(0xFFF97316),
                             text: 'AI-powered health assistant'),
-                        SizedBox(height: 8),
-                        _FeatureRow(
+                        const SizedBox(height: 8),
+                        const _FeatureRow(
                             icon: Icons.picture_as_pdf_outlined,
                             color: Color(0xFFDC2626),
                             text: 'Export health data as PDF'),
-                        SizedBox(height: 8),
-                        _FeatureRow(
+                        const SizedBox(height: 8),
+                        const _FeatureRow(
                             icon: Icons.lock_outline,
                             color: Color(0xFF0891B2),
                             text: 'Secure & private by design'),
@@ -1070,11 +1135,11 @@ Contact: support@careme.app''';
                     ),
                   ),
                   const SizedBox(height: 20),
-                  const Text(
+                  Text(
                     'Built with care for your well-being.',
                     style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF9CA3AF),
+                        color: AppColors.textMuted(context),
                         fontStyle: FontStyle.italic),
                   ),
                   const SizedBox(height: 4),
@@ -1270,7 +1335,7 @@ Contact: support@careme.app''';
   Widget _buildSection(String title, List<Widget> children) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface(context),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)
@@ -1282,12 +1347,12 @@ Contact: support@careme.app''';
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Text(title,
-                style: const TextStyle(
+                style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF111418),
+                    color: AppColors.textPrimary(context),
                     fontSize: 15)),
           ),
-          const Divider(height: 1, color: Color(0xFFF3F4F6)),
+          Divider(height: 1, color: AppColors.border(context)),
           ...children,
         ],
       ),
@@ -1299,18 +1364,61 @@ Contact: support@careme.app''';
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: const Color(0xFF6B7280)),
+          Icon(icon, size: 18, color: AppColors.textSecondary(context)),
           const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(label,
-                  style:
-                      const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                  style: TextStyle(fontSize: 11, color: AppColors.textMuted(context))),
               Text(value,
-                  style:
-                      const TextStyle(fontSize: 14, color: Color(0xFF111418))),
+                  style: TextStyle(fontSize: 14, color: AppColors.textPrimary(context))),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThemeToggleRow() {
+    final isDark = widget.themeMode == ThemeMode.dark;
+    final iconBg = isDark ? const Color(0xFF6366F1) : const Color(0xFFF59E0B);
+    final icon = isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined;
+    final primaryTextColor = Theme.of(context).colorScheme.onSurface;
+    final subTextColor = Theme.of(context).brightness == Brightness.dark
+        ? const Color(0xFF94A3B8)
+        : const Color(0xFF9CA3AF);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+                color: iconBg.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12)),
+            child: Icon(icon, color: iconBg, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Dark Mode',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: primaryTextColor,
+                        fontSize: 14)),
+                Text(isDark ? 'On' : 'Off',
+                    style: TextStyle(fontSize: 12, color: subTextColor)),
+              ],
+            ),
+          ),
+          Switch(
+            value: isDark,
+            onChanged: (v) =>
+                widget.onThemeModeChanged(v ? ThemeMode.dark : ThemeMode.light),
           ),
         ],
       ),
@@ -1339,17 +1447,17 @@ Contact: support@careme.app''';
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontWeight: FontWeight.w500,
-                          color: Color(0xFF111418),
+                          color: AppColors.textPrimary(context),
                           fontSize: 14)),
                   Text(subtitle,
-                      style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF9CA3AF))),
+                      style: TextStyle(
+                          fontSize: 12, color: AppColors.textMuted(context))),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF), size: 20),
+            Icon(Icons.chevron_right, color: AppColors.textMuted(context), size: 20),
           ],
         ),
       ),
@@ -1362,10 +1470,10 @@ Contact: support@careme.app''';
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Phone Number',
+          Text('Phone Number',
               style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF6B7280),
+                  color: AppColors.textSecondary(context),
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 6),
           Row(
@@ -1383,8 +1491,8 @@ Contact: support@careme.app''';
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF9FAFB),
-                    border: Border.all(color: const Color(0xFFD1D5DB)),
+                    color: AppColors.surfaceAlt(context),
+                    border: Border.all(color: AppColors.border(context)),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1393,13 +1501,13 @@ Contact: support@careme.app''';
                       Text(_countryFlag, style: const TextStyle(fontSize: 20)),
                       const SizedBox(width: 6),
                       Text(_countryCode,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF111418))),
+                              color: AppColors.textPrimary(context))),
                       const SizedBox(width: 4),
-                      const Icon(Icons.keyboard_arrow_down,
-                          size: 18, color: Color(0xFF6B7280)),
+                      Icon(Icons.keyboard_arrow_down,
+                          size: 18, color: AppColors.textSecondary(context)),
                     ],
                   ),
                 ),
@@ -1409,16 +1517,18 @@ Contact: support@careme.app''';
                 child: TextField(
                   controller: phoneCtrl,
                   keyboardType: TextInputType.phone,
+                  style: TextStyle(color: AppColors.textPrimary(context)),
                   decoration: InputDecoration(
                     hintText: 'Phone number',
+                    hintStyle: TextStyle(color: AppColors.textMuted(context)),
                     filled: true,
-                    fillColor: const Color(0xFFF9FAFB),
+                    fillColor: AppColors.surfaceAlt(context),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+                        borderSide: BorderSide(color: AppColors.border(context))),
                     enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+                        borderSide: BorderSide(color: AppColors.border(context))),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 12),
                   ),
@@ -1439,23 +1549,24 @@ Contact: support@careme.app''';
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF6B7280),
+                  color: AppColors.textSecondary(context),
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 6),
           TextField(
             controller: ctrl,
             keyboardType: keyboardType,
+            style: TextStyle(color: AppColors.textPrimary(context)),
             decoration: InputDecoration(
               filled: true,
-              fillColor: const Color(0xFFF9FAFB),
+              fillColor: AppColors.surfaceAlt(context),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+                  borderSide: BorderSide(color: AppColors.border(context))),
               enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+                  borderSide: BorderSide(color: AppColors.border(context))),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
@@ -1472,14 +1583,15 @@ Contact: support@careme.app''';
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF6B7280),
+                  color: AppColors.textSecondary(context),
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 6),
           TextField(
             controller: ctrl,
             readOnly: true,
+            style: TextStyle(color: AppColors.textPrimary(context)),
             onTap: () async {
               DateTime initial = DateTime(1990, 1, 15);
               if (ctrl.text.isNotEmpty) {
@@ -1499,16 +1611,17 @@ Contact: support@careme.app''';
             },
             decoration: InputDecoration(
               filled: true,
-              fillColor: const Color(0xFFF9FAFB),
+              fillColor: AppColors.surfaceAlt(context),
               hintText: 'Tap to select date',
-              suffixIcon: const Icon(Icons.calendar_today,
-                  size: 18, color: Color(0xFF6B7280)),
+              hintStyle: TextStyle(color: AppColors.textMuted(context)),
+              suffixIcon: Icon(Icons.calendar_today,
+                  size: 18, color: AppColors.textSecondary(context)),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+                  borderSide: BorderSide(color: AppColors.border(context))),
               enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+                  borderSide: BorderSide(color: AppColors.border(context))),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
@@ -1535,8 +1648,9 @@ class _FeatureRow extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
             child: Text(text,
-                style:
-                    const TextStyle(fontSize: 13, color: Color(0xFF4B5563)))),
+                style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary(context)))),
       ],
     );
   }

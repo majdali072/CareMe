@@ -8,7 +8,7 @@ import requests
 from datetime import datetime, timedelta
 from bson import ObjectId
 from django.conf import settings
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, StreamingHttpResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from gridfs import GridFS
@@ -33,10 +33,20 @@ except ImportError:
 
 # ---------- Gemini setup ----------
 
+## `gemini-2.5-flash` (not `-lite`) is required because google_search
+## grounding is only supported on flash and pro variants.
 GEMINI_API_URL = (
-    'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash-lite:generateContent'
+    'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent'
     f'?key={settings.GEMINI_API_KEY}'
 )
+
+GEMINI_STREAM_URL = (
+    'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent'
+    f'?alt=sse&key={settings.GEMINI_API_KEY}'
+)
+
+# Google Search grounding lets the model fetch fresh info from the web.
+GEMINI_TOOLS = [{'google_search': {}}]
 
 SYSTEM_PROMPT = (
     "You are CareAI, a helpful and friendly health assistant for the CareMe app. "
@@ -47,9 +57,36 @@ SYSTEM_PROMPT = (
     "Do not answer questions about politics, entertainment, coding, math, history, or any non-medical topic. "
     "Be concise, caring, and accurate. If you are unsure about medical advice, recommend consulting a doctor. "
     "Do not diagnose conditions. Keep responses short and helpful. "
-    "When the user asks for a doctor or pharmacy recommendation, ONLY suggest from the "
-    "'Nearby doctors' or 'Nearby pharmacies' list provided in the user context below, "
-    "prefer the closest ones, and include name, address, phone, and distance if shown. "
+    "You have access to Google Search — use it when the user asks about recent or time-sensitive "
+    "health information (new guidelines, recalls, outbreaks, current drug availability, recent research). "
+    "When you rely on search results, briefly summarise the finding in plain language. Prefer reputable "
+    "medical sources (WHO, CDC, NHS, peer-reviewed journals, established medical organisations). "
+    "\n\nMEDICATION SAFETY:\n"
+    "WHENEVER you mention, suggest, recommend, or discuss a specific medication — including "
+    "over-the-counter drugs, supplements, dosages, or alternatives — you MUST end that response with a "
+    "clear warning that the user should consult a qualified healthcare professional (such as a doctor "
+    "or pharmacist) before starting, stopping, or changing any medication. Phrase it naturally, for "
+    "example: '⚠️ Please talk to your doctor or pharmacist before taking any medication — they can "
+    "check it's safe for you, your other meds, and your health conditions.' Never imply that your "
+    "suggestion is a substitute for professional medical judgment. "
+    "\n\nDOCTOR & PHARMACY RECOMMENDATIONS:\n"
+    "When the user describes a sickness, condition, symptom, or asks which doctor to see, "
+    "follow these steps: "
+    "(1) Identify the medical specialty that treats that condition or symptom "
+    "(e.g. chest pain → Cardiology, skin rash → Dermatology, toothache → Dentistry, "
+    "depression/anxiety → Psychiatry, broken bone → Orthopedics, stomach pain → Gastroenterology, "
+    "child illness → Pediatrics, eye problems → Ophthalmology, ear/nose/throat → ENT, "
+    "pregnancy → Obstetrics/Gynecology, general checkup → General Practitioner / Family Medicine). "
+    "(2) Look through the 'Nearby doctors' list below and pick EVERY doctor whose specialty "
+    "matches (exact match OR clearly related specialty). "
+    "(3) List ALL matching doctors — not just one — sorted by distance (closest first). "
+    "For each one, show the full details: name, specialty, address, phone, and distance. "
+    "(4) If no doctor in the list matches the needed specialty, say so and suggest the nearest "
+    "General Practitioner / Family Medicine doctor if one exists; otherwise tell the user that "
+    "no suitable doctor is currently listed. "
+    "(5) If the user asks about filling a prescription or buying medicine, list the nearby "
+    "pharmacies with full contact info, sorted by distance. "
+    "ONLY recommend doctors/pharmacies that appear in the lists below. Never invent entries. "
     "If no nearby list is available, tell the user to set their address in the account screen."
 )
 
@@ -90,14 +127,17 @@ def _nearby_contacts(db, collection, user_lat, user_lng, limit=5, max_km=50.0):
         name = d.get('name', '')
         addr = d.get('address', '')
         phone = d.get('phone', '')
+        specialty = d.get('specialty', '')
         parts = [name]
+        if specialty:
+            parts.append(f"specialty: {specialty}")
         if addr:
-            parts.append(addr)
+            parts.append(f"address: {addr}")
         if phone:
-            parts.append(f"tel {phone}")
+            parts.append(f"tel: {phone}")
         if dist is not None:
             parts.append(f"{dist:.1f} km away")
-        lines.append(' — '.join(parts))
+        lines.append(' | '.join(parts))
     return lines
 
 # ---------- helpers ----------
@@ -648,6 +688,8 @@ def medications(request):
         'startDate': data.get('startDate'),
         'endDate': data.get('endDate'),
         'isLifetime': data.get('isLifetime', False),
+        'isHistory': data.get('isHistory', False),
+        'isPrn': data.get('isPrn', False),
     }
 
     if not med['name']:
@@ -686,7 +728,8 @@ def medication_detail(request, med_id):
     data = _parse_body(request)
     updates = {}
     for field in ('name', 'dosage', 'frequency', 'time', 'purpose', 'sideEffects',
-                   'schedule', 'startDate', 'endDate', 'isLifetime'):
+                   'schedule', 'startDate', 'endDate', 'isLifetime', 'isHistory',
+                   'isPrn'):
         if field in data:
             updates[field] = data[field]
 
@@ -844,6 +887,7 @@ def _contact_from_doc(doc):
         'phone': doc.get('phone', ''),
         'latitude': doc.get('latitude'),
         'longitude': doc.get('longitude'),
+        'specialty': doc.get('specialty', ''),
     }
 
 
@@ -871,6 +915,8 @@ def _contacts_list_create(request, collection_name):
         'longitude': data.get('longitude'),
         'created_at': datetime.utcnow(),
     }
+    if collection_name == 'doctors':
+        doc['specialty'] = (data.get('specialty') or '').strip()
     result = coll.insert_one(doc)
     doc['_id'] = result.inserted_id
     return JsonResponse(_contact_from_doc(doc), status=201)
@@ -963,9 +1009,52 @@ def export_data(request):
     meds = list(db.medications.find({'user_id': user_id}))
     meds = [decrypt_document('medications', m) for m in meds]
 
+    # Split active vs history. A med is "history" when isHistory=True OR its
+    # end date has already passed (and it isn't marked lifetime).
+    today = datetime.now().date()
+
+    def _is_history(m):
+        if m.get('isHistory'):
+            return True
+        if m.get('isLifetime'):
+            return False
+        end_str = m.get('endDate')
+        if not end_str:
+            return False
+        try:
+            end_dt = datetime.fromisoformat(end_str.replace('Z', '+00:00')).date()
+            return end_dt < today
+        except (ValueError, TypeError):
+            return False
+
+    active_meds = [m for m in meds if not _is_history(m)]
+    history_meds = [m for m in meds if _is_history(m)]
+
     # Get appointments from request body (stored client-side)
     data = _parse_body(request)
     appointments = data.get('appointments', [])
+
+    def _apt_is_past(a):
+        full = a.get('fullDate')
+        if not full:
+            return False
+        try:
+            d = datetime.fromisoformat(full.replace('Z', '+00:00')).date()
+            return d < today
+        except (ValueError, TypeError):
+            return False
+
+    upcoming_apts = [a for a in appointments if not _apt_is_past(a)]
+    previous_apts = [a for a in appointments if _apt_is_past(a)]
+
+    # Format ISO date strings for PDF output
+    def _fmt_date(iso_str):
+        if not iso_str:
+            return '—'
+        try:
+            return datetime.fromisoformat(iso_str.replace('Z', '+00:00')).strftime('%b %d, %Y')
+        except (ValueError, TypeError):
+            return iso_str
 
     # Build PDF
     buf = io.BytesIO()
@@ -975,27 +1064,8 @@ def export_data(request):
     subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.grey, spaceAfter=20)
     heading_style = ParagraphStyle('SectionHeading', parent=styles['Heading2'], fontSize=14, textColor=colors.HexColor('#1E3A5F'), spaceBefore=20, spaceAfter=10)
 
-    elements = []
-
-    # Header
-    elements.append(Paragraph('CareMe - My Health Data', title_style))
-    elements.append(Paragraph(f'Generated for {user_name} on {datetime.now().strftime("%B %d, %Y")}', subtitle_style))
-
-    # Medications section
-    elements.append(Paragraph('Medications', heading_style))
-    if meds:
-        med_data = [['Name', 'Dosage', 'Frequency', 'Time', 'Purpose', 'Side Effects']]
-        for m in meds:
-            med_data.append([
-                m.get('name', ''),
-                m.get('dosage', ''),
-                m.get('frequency', ''),
-                m.get('time', ''),
-                m.get('purpose', ''),
-                m.get('sideEffects', ''),
-            ])
-        med_table = Table(med_data, repeatRows=1)
-        med_table.setStyle(TableStyle([
+    def _table_style():
+        return TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -1007,45 +1077,85 @@ def export_data(request):
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        elements.append(med_table)
-    else:
-        elements.append(Paragraph('No medications on record.', styles['Normal']))
+        ])
 
-    elements.append(Spacer(1, 20))
+    def _med_rows(source):
+        rows = [['Name', 'Dosage', 'Frequency', 'Start', 'End', 'Purpose', 'Side Effects']]
+        for m in source:
+            start = _fmt_date(m.get('startDate'))
+            if m.get('isLifetime'):
+                end = 'Lifetime'
+            else:
+                end = _fmt_date(m.get('endDate'))
+            rows.append([
+                m.get('name', ''),
+                m.get('dosage', ''),
+                m.get('frequency', ''),
+                start,
+                end,
+                m.get('purpose', ''),
+                m.get('sideEffects', ''),
+            ])
+        return rows
 
-    # Appointments section
-    elements.append(Paragraph('Appointments', heading_style))
-    if appointments:
-        apt_data = [['Date', 'Title', 'Time', 'Type', 'Location']]
-        for a in appointments:
-            date_val = a.get('date', '')
-            if isinstance(date_val, int):
-                date_val = datetime.fromtimestamp(date_val / 1000).strftime('%b %d, %Y')
-            apt_data.append([
+    def _apt_rows(source):
+        rows = [['Date', 'Title', 'Time', 'Type', 'Location']]
+        for a in source:
+            date_val = _fmt_date(a.get('fullDate')) if a.get('fullDate') else str(a.get('date', ''))
+            rows.append([
                 date_val,
                 a.get('title', ''),
                 a.get('time', ''),
                 a.get('type', ''),
                 a.get('location', ''),
             ])
-        apt_table = Table(apt_data, repeatRows=1)
-        apt_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 9),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F3F4F6')]),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        elements.append(apt_table)
+        return rows
+
+    elements = []
+    elements.append(Paragraph('CareMe - My Health Data', title_style))
+    elements.append(Paragraph(f'Generated for {user_name} on {datetime.now().strftime("%B %d, %Y")}', subtitle_style))
+
+    # Active Medications
+    elements.append(Paragraph('Active Medications', heading_style))
+    if active_meds:
+        t = Table(_med_rows(active_meds), repeatRows=1)
+        t.setStyle(_table_style())
+        elements.append(t)
     else:
-        elements.append(Paragraph('No appointments on record.', styles['Normal']))
+        elements.append(Paragraph('No active medications on record.', styles['Normal']))
+
+    elements.append(Spacer(1, 20))
+
+    # Medication History
+    elements.append(Paragraph('Medication History', heading_style))
+    if history_meds:
+        t = Table(_med_rows(history_meds), repeatRows=1)
+        t.setStyle(_table_style())
+        elements.append(t)
+    else:
+        elements.append(Paragraph('No past medications on record.', styles['Normal']))
+
+    elements.append(Spacer(1, 20))
+
+    # Upcoming Appointments
+    elements.append(Paragraph('Upcoming Appointments', heading_style))
+    if upcoming_apts:
+        t = Table(_apt_rows(upcoming_apts), repeatRows=1)
+        t.setStyle(_table_style())
+        elements.append(t)
+    else:
+        elements.append(Paragraph('No upcoming appointments on record.', styles['Normal']))
+
+    elements.append(Spacer(1, 20))
+
+    # Previous Appointments
+    elements.append(Paragraph('Previous Appointments', heading_style))
+    if previous_apts:
+        t = Table(_apt_rows(previous_apts), repeatRows=1)
+        t.setStyle(_table_style())
+        elements.append(t)
+    else:
+        elements.append(Paragraph('No past appointments on record.', styles['Normal']))
 
     doc.build(elements)
     buf.seek(0)
@@ -1057,26 +1167,20 @@ def export_data(request):
 
 # ---------- Chatbot ----------
 
-@csrf_exempt
-@login_required
-@require_http_methods(['POST'])
-def chat(request):
-    data = _parse_body(request)
-    user_message = (data.get('message') or '').strip()
+def _build_chat_contents(user_id, user_message, history, attachment=None):
+    """Build the Gemini `contents` array from the user's stored context plus
+    the supplied message + history. Shared by `chat` and `chat_stream`.
 
-    if not user_message:
-        return JsonResponse({'error': 'Message is required'}, status=400)
-
-    history = data.get('history', [])
-
+    `attachment` (optional): dict with keys `mimeType` and `data` (base64
+    string). When present, the bytes are attached to the current user turn
+    as `inline_data` so Gemini can read the image or document."""
     db = get_db()
 
-    # Fetch user context for personalized responses (decrypt for AI context)
-    meds = list(db.medications.find({'user_id': request.user_id}))
+    meds = list(db.medications.find({'user_id': user_id}))
     meds = [decrypt_document('medications', m) for m in meds]
-    labs = list(db.lab_tests.find({'user_id': request.user_id}))
+    labs = list(db.lab_tests.find({'user_id': user_id}))
     labs = [decrypt_document('lab_tests', l) for l in labs]
-    user = db.users.find_one({'_id': ObjectId(request.user_id)})
+    user = db.users.find_one({'_id': ObjectId(user_id)})
 
     context_parts = [SYSTEM_PROMPT]
 
@@ -1097,8 +1201,8 @@ def chat(request):
     if user_addr:
         context_parts.append(f"\nUser's address: {user_addr}")
 
-    doctors_nearby = _nearby_contacts(db, 'doctors', user_lat, user_lng)
-    pharmacies_nearby = _nearby_contacts(db, 'pharmacies', user_lat, user_lng)
+    doctors_nearby = _nearby_contacts(db, 'doctors', user_lat, user_lng, limit=10)
+    pharmacies_nearby = _nearby_contacts(db, 'pharmacies', user_lat, user_lng, limit=5)
     if doctors_nearby:
         context_parts.append(
             "\nNearby doctors (admin-curated, sorted by proximity):\n- "
@@ -1112,20 +1216,57 @@ def chat(request):
 
     system_context = ''.join(context_parts)
 
-    # Build conversation contents for Gemini REST API
     contents = [
         {'role': 'user', 'parts': [{'text': system_context + '\n\nPlease acknowledge you understand your role.'}]},
         {'role': 'model', 'parts': [{'text': "Understood! I'm CareAI, ready to help with your health needs."}]},
     ]
 
-    for msg in history:
+    for msg in history or []:
         role = 'user' if msg.get('isUser') else 'model'
         contents.append({'role': role, 'parts': [{'text': msg.get('text', '')}]})
 
-    contents.append({'role': 'user', 'parts': [{'text': user_message}]})
+    # Compose the final user turn. If an attachment is supplied, it goes
+    # first as inline_data so Gemini can read the file, followed by the
+    # user's text question.
+    user_parts = []
+    if attachment and attachment.get('data') and attachment.get('mimeType'):
+        user_parts.append({
+            'inline_data': {
+                'mime_type': attachment['mimeType'],
+                'data': attachment['data'],
+            }
+        })
+    if user_message:
+        user_parts.append({'text': user_message})
+    # Fallback: always include at least one text part so the request is valid.
+    if not user_parts:
+        user_parts.append({'text': user_message or ''})
+
+    contents.append({'role': 'user', 'parts': user_parts})
+    return contents
+
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def chat(request):
+    data = _parse_body(request)
+    user_message = (data.get('message') or '').strip()
+    attachment = data.get('attachment')
+
+    if not user_message and not attachment:
+        return JsonResponse({'error': 'Message or attachment is required'}, status=400)
+
+    history = data.get('history', [])
+    contents = _build_chat_contents(
+        request.user_id, user_message, history, attachment=attachment)
 
     try:
-        resp = requests.post(GEMINI_API_URL, json={'contents': contents}, timeout=30)
+        resp = requests.post(
+            GEMINI_API_URL,
+            json={'contents': contents, 'tools': GEMINI_TOOLS},
+            timeout=30,
+        )
         resp_data = resp.json()
         if 'candidates' in resp_data and resp_data['candidates']:
             reply = resp_data['candidates'][0]['content']['parts'][0]['text']
@@ -1143,3 +1284,71 @@ def chat(request):
         reply = "I'm sorry, I'm having trouble connecting right now. Please try again in a moment."
 
     return JsonResponse({'reply': reply})
+
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def chat_stream(request):
+    """Streaming variant of `chat`. Forwards Gemini's SSE chunks as
+    `data: {"text": "..."}\\n\\n` events so the client can render tokens
+    as they arrive."""
+    data = _parse_body(request)
+    user_message = (data.get('message') or '').strip()
+    attachment = data.get('attachment')
+
+    if not user_message and not attachment:
+        return JsonResponse({'error': 'Message or attachment is required'}, status=400)
+
+    history = data.get('history', [])
+    contents = _build_chat_contents(
+        request.user_id, user_message, history, attachment=attachment)
+
+    def _stream():
+        try:
+            with requests.post(
+                GEMINI_STREAM_URL,
+                json={'contents': contents, 'tools': GEMINI_TOOLS},
+                stream=True,
+                timeout=60,
+            ) as resp:
+                if resp.status_code != 200:
+                    err = resp.text[:500]
+                    print(f"Gemini stream error {resp.status_code}: {err}")
+                    yield f'data: {json.dumps({"error": "Upstream error"})}\n\n'
+                    return
+
+                for raw_line in resp.iter_lines(decode_unicode=True):
+                    if not raw_line:
+                        continue
+                    # SSE lines from Gemini look like: `data: {...}`
+                    if raw_line.startswith('data:'):
+                        payload = raw_line[5:].strip()
+                        if not payload or payload == '[DONE]':
+                            continue
+                        try:
+                            chunk = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        try:
+                            part = chunk['candidates'][0]['content']['parts'][0]
+                            text = part.get('text', '')
+                        except (KeyError, IndexError, TypeError):
+                            text = ''
+                        if text:
+                            yield f'data: {json.dumps({"text": text})}\n\n'
+                yield 'data: {"done": true}\n\n'
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"chat_stream error: {e}")
+            yield f'data: {json.dumps({"error": str(e)})}\n\n'
+
+    response = StreamingHttpResponse(
+        _stream(),
+        content_type='text/event-stream',
+    )
+    # Discourage proxy buffering (ngrok, nginx, etc.)
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response

@@ -149,6 +149,7 @@ class NotificationService {
   };
 
   static DateTime? nextReminderTime(Medication med) {
+    if (med.isPastOrHistory || med.isPrn) return null;
     if (med.schedule == null || med.schedule!.isEmpty) return null;
     final now = DateTime.now();
     DateTime? earliest;

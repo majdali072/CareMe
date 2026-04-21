@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class OTPVerificationScreen extends StatefulWidget {
   final String verificationType; // "email" or "phone"
@@ -232,13 +233,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
           // Content
           Expanded(
             child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFF9FAFB), Color(0xFFEFF6FF)],
-                ),
-              ),
+              color: AppColors.background(context),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 27),
                 child: Column(
@@ -248,7 +243,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                     Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppColors.surface(context),
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
@@ -284,10 +279,10 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                           const SizedBox(height: 24),
 
                           // Title
-                          const Text(
+                          Text(
                             'Enter Verification Code',
                             style: TextStyle(
-                              color: Color(0xFF111418),
+                              color: AppColors.textPrimary(context),
                               fontSize: 20,
                               fontWeight: FontWeight.w600,
                             ),
@@ -298,8 +293,8 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                           RichText(
                             textAlign: TextAlign.center,
                             text: TextSpan(
-                              style: const TextStyle(
-                                color: Color(0xFF6B7280),
+                              style: TextStyle(
+                                color: AppColors.textSecondary(context),
                                 fontSize: 14,
                               ),
                               children: [
@@ -315,11 +310,11 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          const Text(
+                          Text(
                             "Can't find it? Check your spam or junk folder.",
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Color(0xFF9CA3AF),
+                              color: AppColors.textMuted(context),
                               fontSize: 12,
                             ),
                           ),
@@ -345,27 +340,27 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                                     inputFormatters: [
                                       FilteringTextInputFormatter.digitsOnly,
                                     ],
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.w600,
-                                      color: Color(0xFF111418),
+                                      color: AppColors.textPrimary(context),
                                     ),
                                     decoration: InputDecoration(
                                       counterText: '',
                                       filled: true,
-                                      fillColor: const Color(0xFFF9FAFB),
+                                      fillColor: AppColors.surfaceAlt(context),
                                       contentPadding: const EdgeInsets.symmetric(vertical: 14),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
-                                        borderSide: const BorderSide(
-                                          color: Color(0xFFD1D5DB),
+                                        borderSide: BorderSide(
+                                          color: AppColors.border(context),
                                           width: 2,
                                         ),
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
-                                        borderSide: const BorderSide(
-                                          color: Color(0xFFD1D5DB),
+                                        borderSide: BorderSide(
+                                          color: AppColors.border(context),
                                           width: 2,
                                         ),
                                       ),
@@ -479,9 +474,9 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                           const SizedBox(height: 16),
 
                           // Resend Code
-                          const Text(
+                          Text(
                             "Didn't receive the code?",
-                            style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+                            style: TextStyle(color: AppColors.textSecondary(context), fontSize: 14),
                           ),
                           const SizedBox(height: 8),
                           if (_canResend)
@@ -510,8 +505,8 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                                   ),
                                 ],
                               ),
-                              style: const TextStyle(
-                                color: Color(0xFF6B7280),
+                              style: TextStyle(
+                                color: AppColors.textSecondary(context),
                                 fontSize: 14,
                               ),
                             ),
@@ -521,9 +516,9 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
 
                     // Additional Info
                     const SizedBox(height: 24),
-                    const Text(
+                    Text(
                       'For security reasons, this code will expire in 10 minutes',
-                      style: TextStyle(color: Color(0xFF6B7280), fontSize: 12),
+                      style: TextStyle(color: AppColors.textSecondary(context), fontSize: 12),
                       textAlign: TextAlign.center,
                     ),
                   ],

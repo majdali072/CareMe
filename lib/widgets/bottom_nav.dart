@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class BottomNav extends StatelessWidget {
   final String currentPage;
@@ -23,8 +24,8 @@ class BottomNav extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
-        border: const Border(top: BorderSide(color: Color(0xFFE5E7EB), width: 0.5)),
+        color: AppColors.surface(context).withOpacity(0.95),
+        border: Border(top: BorderSide(color: AppColors.border(context), width: 0.5)),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, -4))],
       ),
       child: SafeArea(
@@ -51,10 +52,10 @@ class BottomNav extends StatelessWidget {
                               : null,
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: Icon(icons[i], color: isActive ? Colors.white : const Color(0xFF6B7280), size: 24),
+                        child: Icon(icons[i], color: isActive ? Colors.white : AppColors.textSecondary(context), size: 24),
                       ),
                       const SizedBox(height: 2),
-                      Text(label, style: TextStyle(fontSize: 10, color: isActive ? const Color(0xFF2563EB) : const Color(0xFF6B7280), fontWeight: isActive ? FontWeight.w600 : FontWeight.normal)),
+                      Text(label, style: TextStyle(fontSize: 10, color: isActive ? const Color(0xFF2563EB) : AppColors.textSecondary(context), fontWeight: isActive ? FontWeight.w600 : FontWeight.normal)),
                     ],
                   ),
                 ),

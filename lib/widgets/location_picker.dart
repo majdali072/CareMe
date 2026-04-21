@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../theme/app_theme.dart';
 
 class SelectedLocation {
   final String address;
@@ -40,18 +42,25 @@ class LocationAddressField extends StatelessWidget {
   final String label;
   final SelectedLocation? value;
   final ValueChanged<SelectedLocation> onChanged;
+  /// When true and no initial value is set, the picker tries to seed itself
+  /// with the phone's current GPS location. Pass `true` from non-admin screens.
+  final bool autoDetect;
 
   const LocationAddressField({
     super.key,
     this.label = 'Address',
     required this.value,
     required this.onChanged,
+    this.autoDetect = false,
   });
 
   Future<void> _open(BuildContext context) async {
     final result = await Navigator.of(context).push<SelectedLocation>(
       MaterialPageRoute(
-        builder: (_) => LocationPickerScreen(initial: value),
+        builder: (_) => LocationPickerScreen(
+          initial: value,
+          autoDetect: autoDetect && value == null,
+        ),
         fullscreenDialog: true,
       ),
     );
@@ -66,10 +75,10 @@ class LocationAddressField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF374151),
+            color: AppColors.textPrimary(context),
           ),
         ),
         const SizedBox(height: 8),
@@ -80,8 +89,8 @@ class LocationAddressField extends StatelessWidget {
             padding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              color: AppColors.surfaceAlt(context),
+              border: Border.all(color: AppColors.border(context)),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
@@ -95,15 +104,15 @@ class LocationAddressField extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       color: hasValue
-                          ? const Color(0xFF1E293B)
-                          : const Color(0xFFCBD5E1),
+                          ? AppColors.textPrimary(context)
+                          : AppColors.textMuted(context),
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Icon(Icons.chevron_right,
-                    color: Color(0xFF94A3B8), size: 20),
+                Icon(Icons.chevron_right,
+                    color: AppColors.textMuted(context), size: 20),
               ],
             ),
           ),
@@ -115,8 +124,13 @@ class LocationAddressField extends StatelessWidget {
 
 class LocationPickerScreen extends StatefulWidget {
   final SelectedLocation? initial;
+  final bool autoDetect;
 
-  const LocationPickerScreen({super.key, this.initial});
+  const LocationPickerScreen({
+    super.key,
+    this.initial,
+    this.autoDetect = false,
+  });
 
   @override
   State<LocationPickerScreen> createState() => _LocationPickerScreenState();
@@ -145,6 +159,79 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     } else if (init != null && init.address.isNotEmpty) {
       _addressCtrl.text = init.address;
       Future.microtask(() => _geocode(init.address));
+    } else if (widget.autoDetect) {
+      Future.microtask(_useCurrentLocation);
+    }
+  }
+
+  /// Fetch the phone's current GPS location, drop the pin there, and reverse
+  /// geocode for a street address. Called automatically when `autoDetect` is
+  /// true and there's no initial address; can also be triggered manually from
+  /// the "Use current location" button.
+  Future<void> _useCurrentLocation() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (!mounted) return;
+        setState(() {
+          _busy = false;
+          _error = 'Location services are turned off on this device.';
+        });
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        setState(() {
+          _busy = false;
+          _error =
+              'Location permission denied. You can still pick a place manually.';
+        });
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      if (!mounted) return;
+      final latLng = LatLng(pos.latitude, pos.longitude);
+      setState(() => _pin = latLng);
+      await _moveCameraTo(latLng);
+      final result = await _reverseGeocode(latLng);
+      if (!mounted) return;
+      setState(() {
+        if (result.address != null) _addressCtrl.text = result.address!;
+        _busy = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'Could not detect location: $e';
+      });
+    }
+  }
+
+  Future<void> _moveCameraTo(LatLng target) async {
+    try {
+      final ctrl = await _mapController.future
+          .timeout(const Duration(seconds: 2));
+      await ctrl.animateCamera(
+        CameraUpdate.newLatLngZoom(target, 15),
+      );
+    } catch (_) {
+      // Map not ready yet; initial camera will pick up _pin anyway.
     }
   }
 
@@ -309,41 +396,76 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             top: 10,
             left: 10,
             right: 10,
-            child: Material(
-              elevation: 4,
-              borderRadius: BorderRadius.circular(12),
-              child: TextField(
-                controller: _searchCtrl,
-                textInputAction: TextInputAction.search,
-                onSubmitted: _geocode,
-                decoration: InputDecoration(
-                  hintText: 'Search address, place, city…',
-                  prefixIcon:
-                      const Icon(Icons.search, color: Color(0xFF6B7280)),
-                  suffixIcon: _busy
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.arrow_forward,
-                              color: Color(0xFF2563EB)),
-                          onPressed: () => _geocode(_searchCtrl.text),
-                        ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+            child: Column(
+              children: [
+                Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(12),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: _geocode,
+                    decoration: InputDecoration(
+                      hintText: 'Search address, place, city…',
+                      prefixIcon:
+                          const Icon(Icons.search, color: Color(0xFF6B7280)),
+                      suffixIcon: _busy
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            )
+                          : IconButton(
+                              icon: const Icon(Icons.arrow_forward,
+                                  color: Color(0xFF2563EB)),
+                              onPressed: () => _geocode(_searchCtrl.text),
+                            ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Material(
+                    elevation: 3,
+                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.white,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: _busy ? null : _useCurrentLocation,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.my_location,
+                                size: 16, color: Color(0xFF2563EB)),
+                            SizedBox(width: 6),
+                            Text('Use current location',
+                                style: TextStyle(
+                                    color: Color(0xFF2563EB),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           if (_pin != null || _error != null)

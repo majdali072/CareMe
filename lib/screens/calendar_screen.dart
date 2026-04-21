@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/app_models.dart';
 import '../services/google_calendar_service.dart';
 import '../widgets/edit_appointment_dialog.dart';
+import '../theme/app_theme.dart';
 
 class CalendarScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -61,32 +62,77 @@ class _CalendarScreenState extends State<CalendarScreen> {
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('ALL APPOINTMENTS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF), letterSpacing: 1.2)),
-                const SizedBox(height: 10),
+              children: () {
+                // Indices into the original list so edit/delete still work
+                final indexed = widget.appointments
+                    .asMap()
+                    .entries
+                    .toList();
+                final upcoming = indexed
+                    .where((e) => !e.value.isPast)
+                    .toList();
+                final previous = indexed
+                    .where((e) => e.value.isPast)
+                    .toList();
 
-                if (widget.appointments.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(40),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
-                    ),
-                    child: const Column(
-                      children: [
-                        Icon(Icons.calendar_today_outlined, size: 48, color: Color(0xFF9CA3AF)),
-                        SizedBox(height: 12),
-                        Text('No appointments scheduled', style: TextStyle(color: Color(0xFF6B7280), fontSize: 15)),
-                        SizedBox(height: 4),
-                        Text('Add your first appointment!', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
-                      ],
-                    ),
-                  ),
+                return [
+                  Text('UPCOMING APPOINTMENTS',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMuted(context),
+                          letterSpacing: 1.2)),
+                  const SizedBox(height: 10),
 
-                ...widget.appointments.asMap().entries.map((e) => _buildAptCard(e.key, e.value)),
-              ],
+                  if (upcoming.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(40),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface(context),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2))
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(Icons.calendar_today_outlined,
+                              size: 48,
+                              color: AppColors.textMuted(context)),
+                          const SizedBox(height: 12),
+                          Text('No upcoming appointments',
+                              style: TextStyle(
+                                  color: AppColors.textSecondary(context),
+                                  fontSize: 15)),
+                          const SizedBox(height: 4),
+                          Text('Add your next appointment!',
+                              style: TextStyle(
+                                  color: AppColors.textMuted(context),
+                                  fontSize: 13)),
+                        ],
+                      ),
+                    ),
+
+                  ...upcoming.map((e) => _buildAptCard(e.key, e.value)),
+
+                  const SizedBox(height: 24),
+
+                  Text('PREVIOUS APPOINTMENTS',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMuted(context),
+                          letterSpacing: 1.2)),
+                  const SizedBox(height: 10),
+
+                  ...previous
+                      .map((e) => _buildPreviousAptCard(e.key, e.value)),
+                ];
+              }(),
             ),
           ),
         ],
@@ -95,16 +141,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildAptCard(int index, Appointment apt) {
+    // Show the actual picked date in the pill.
+    final String dateLabel;
+    final d = apt.fullDate;
+    if (d != null) {
+      dateLabel = '${_months[d.month - 1]} ${d.day}';
+    } else {
+      dateLabel = 'Day ${apt.date}';
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface(context),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
+          // Vertically center the whole row so the edit/delete buttons sit
+          // in the middle of the card's height regardless of content.
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
               width: 48, height: 48,
@@ -122,56 +180,84 @@ class _CalendarScreenState extends State<CalendarScreen> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(apt.title, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF111418), fontSize: 15)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-                        child: Text('Nov ${apt.date}', style: const TextStyle(color: Color(0xFF2563EB), fontSize: 11, fontWeight: FontWeight.w600)),
-                      ),
-                      const SizedBox(width: 6),
-                      _iconBtn(Icons.edit_outlined, () {
-                        showDialog(
-                          context: context,
-                          builder: (_) => EditAppointmentDialog(
-                            appointment: apt,
-                            onSave: (updated) {
-                              final apts = List<Appointment>.from(widget.appointments);
-                              apts[index] = updated;
-                              widget.onAppointmentsChanged(apts);
-                            },
-                          ),
-                        );
-                      }),
-                      _iconBtn(Icons.delete_outline, () async {
-                        // Delete from Google Calendar if event ID exists
-                        if (apt.googleEventId != null && apt.googleEventId!.isNotEmpty) {
-                          await GoogleCalendarService.deleteEvent(apt.googleEventId!);
-                        }
-                        final apts = List<Appointment>.from(widget.appointments)..removeAt(index);
-                        widget.onAppointmentsChanged(apts);
-                      }),
-                    ],
-                  ),
-                  Text(apt.type, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                  Text(apt.title,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary(context),
+                          fontSize: 15)),
+                  if (apt.type.isNotEmpty)
+                    Text(apt.type,
+                        style: TextStyle(
+                            color: AppColors.textSecondary(context),
+                            fontSize: 13)),
                   const SizedBox(height: 8),
                   Row(children: [
                     const Icon(Icons.access_time, size: 14, color: Color(0xFF2563EB)),
                     const SizedBox(width: 4),
-                    Text(apt.time, style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                    Text(apt.time, style: TextStyle(fontSize: 13, color: AppColors.textSecondary(context))),
                   ]),
                   const SizedBox(height: 4),
                   Row(children: [
                     const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF2563EB)),
                     const SizedBox(width: 4),
-                    Text(apt.location, style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                    Expanded(
+                      child: Text(apt.location,
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSecondary(context)),
+                          overflow: TextOverflow.ellipsis),
+                    ),
                   ]),
                 ],
               ),
+            ),
+            const SizedBox(width: 8),
+            // Date pill + edit/delete — vertically centered because the
+            // parent Row uses CrossAxisAlignment.center.
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                      color: AppColors.tint(context),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text(dateLabel,
+                      style: TextStyle(
+                          color: AppColors.accent(context),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _iconBtn(Icons.edit_outlined, () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => EditAppointmentDialog(
+                          appointment: apt,
+                          onSave: (updated) {
+                            final apts = List<Appointment>.from(widget.appointments);
+                            apts[index] = updated;
+                            widget.onAppointmentsChanged(apts);
+                          },
+                        ),
+                      );
+                    }),
+                    _iconBtn(Icons.delete_outline, () async {
+                      if (apt.googleEventId != null && apt.googleEventId!.isNotEmpty) {
+                        await GoogleCalendarService.deleteEvent(apt.googleEventId!);
+                      }
+                      final apts = List<Appointment>.from(widget.appointments)..removeAt(index);
+                      widget.onAppointmentsChanged(apts);
+                    }),
+                  ],
+                ),
+              ],
             ),
           ],
         ),
@@ -185,8 +271,91 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Container(
         width: 34, height: 34,
         margin: const EdgeInsets.only(left: 4),
-        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-        child: Icon(icon, color: const Color(0xFF2563EB), size: 18),
+        decoration: BoxDecoration(
+            color: AppColors.tint(context),
+            borderRadius: BorderRadius.circular(8)),
+        child: Icon(icon, color: AppColors.accent(context), size: 18),
+      ),
+    );
+  }
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _formatPastDate(Appointment apt) {
+    final d = apt.fullDate;
+    if (d == null) return 'Day ${apt.date}';
+    return '${_months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
+  Widget _buildPreviousAptCard(int index, Appointment apt) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border(context)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AppColors.surface(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border(context)),
+            ),
+            child: Icon(Icons.history,
+                color: AppColors.textSecondary(context), size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(apt.title,
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: AppColors.textPrimary(context))),
+                const SizedBox(height: 2),
+                Text(
+                  '${_formatPastDate(apt)}${apt.time.isNotEmpty ? ' • ${apt.time}' : ''}',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary(context)),
+                ),
+                if (apt.location.isNotEmpty)
+                  Text(apt.location,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMuted(context)),
+                      overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              final apts =
+                  List<Appointment>.from(widget.appointments)..removeAt(index);
+              widget.onAppointmentsChanged(apts);
+            },
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.delete_outline,
+                  size: 16, color: Color(0xFFDC2626)),
+            ),
+          ),
+        ],
       ),
     );
   }

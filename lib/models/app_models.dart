@@ -25,6 +25,9 @@ class Medication {
   final DateTime? startDate;
   final DateTime? endDate;
   final bool? isLifetime;
+  final bool isHistory;
+  /// "Taken when needed" / PRN. No schedule, no reminders, no start/end.
+  final bool isPrn;
 
   Medication({
     this.id,
@@ -38,7 +41,44 @@ class Medication {
     this.startDate,
     this.endDate,
     this.isLifetime,
+    this.isHistory = false,
+    this.isPrn = false,
   });
+
+  /// True if the medication should be shown in the History section.
+  /// History when explicitly marked OR when the end date has passed.
+  bool get isPastOrHistory {
+    if (isHistory) return true;
+    if (isPrn) return false; // PRN meds never auto-expire
+    if (isLifetime == true) return false;
+    if (endDate == null) return false;
+    final today = DateTime.now();
+    final today0 = DateTime(today.year, today.month, today.day);
+    final end0 = DateTime(endDate!.year, endDate!.month, endDate!.day);
+    return end0.isBefore(today0);
+  }
+
+  /// Auto-computed frequency string for display + AI context.
+  /// Sums all scheduled times across the week and renders something readable.
+  String get computedFrequency {
+    if (isPrn) return 'As needed';
+    final s = schedule;
+    if (s == null || s.isEmpty) return frequency.isNotEmpty ? frequency : '—';
+    final totalTimes = s.fold<int>(0, (sum, e) => sum + e.times.length);
+    if (totalTimes == 0) return '—';
+    final daysWithTimes = s.where((e) => e.times.isNotEmpty).length;
+    if (daysWithTimes == 7) {
+      final perDay = totalTimes / 7;
+      if (totalTimes % 7 == 0) {
+        final n = totalTimes ~/ 7;
+        return n == 1 ? 'Daily' : 'Daily, $n× per day';
+      }
+      return 'Daily, ~${perDay.toStringAsFixed(1)}× per day';
+    }
+    final timeWord = totalTimes == 1 ? 'time' : 'times';
+    final dayWord = daysWithTimes == 1 ? 'day' : 'days';
+    return '$totalTimes $timeWord per week ($daysWithTimes $dayWord)';
+  }
 
   factory Medication.fromJson(Map<String, dynamic> json) {
     return Medication(
@@ -59,6 +99,8 @@ class Medication {
           ? DateTime.parse(json['endDate'] as String)
           : null,
       isLifetime: json['isLifetime'] as bool? ?? false,
+      isHistory: json['isHistory'] as bool? ?? false,
+      isPrn: json['isPrn'] as bool? ?? false,
     );
   }
 
@@ -73,6 +115,8 @@ class Medication {
         'startDate': startDate?.toIso8601String(),
         'endDate': endDate?.toIso8601String(),
         'isLifetime': isLifetime ?? false,
+        'isHistory': isHistory,
+        'isPrn': isPrn,
       };
 
   Medication copyWith({
@@ -87,6 +131,8 @@ class Medication {
     DateTime? startDate,
     DateTime? endDate,
     bool? isLifetime,
+    bool? isHistory,
+    bool? isPrn,
   }) {
     return Medication(
       id: id ?? this.id,
@@ -100,6 +146,8 @@ class Medication {
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       isLifetime: isLifetime ?? this.isLifetime,
+      isHistory: isHistory ?? this.isHistory,
+      isPrn: isPrn ?? this.isPrn,
     );
   }
 }
@@ -144,6 +192,7 @@ class LabTest {
 
 class Appointment {
   final int date;
+  final DateTime? fullDate;
   final String title;
   final String time;
   final String type;
@@ -152,6 +201,7 @@ class Appointment {
 
   Appointment({
     required this.date,
+    this.fullDate,
     required this.title,
     required this.time,
     required this.type,
@@ -159,8 +209,20 @@ class Appointment {
     this.googleEventId,
   });
 
+  /// True if the appointment is in the past (date has already happened).
+  /// Falls back to false when no full date is available (legacy entries).
+  bool get isPast {
+    if (fullDate == null) return false;
+    final now = DateTime.now();
+    final today0 = DateTime(now.year, now.month, now.day);
+    final apt0 =
+        DateTime(fullDate!.year, fullDate!.month, fullDate!.day);
+    return apt0.isBefore(today0);
+  }
+
   Appointment copyWith({
     int? date,
+    DateTime? fullDate,
     String? title,
     String? time,
     String? type,
@@ -169,6 +231,7 @@ class Appointment {
   }) {
     return Appointment(
       date: date ?? this.date,
+      fullDate: fullDate ?? this.fullDate,
       title: title ?? this.title,
       time: time ?? this.time,
       type: type ?? this.type,

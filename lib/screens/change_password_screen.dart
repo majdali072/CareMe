@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -104,7 +105,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   // Form Card
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.97),
+                      color: AppColors.surface(context).withOpacity(0.97),
                       borderRadius: BorderRadius.circular(28),
                       boxShadow: [
                         BoxShadow(
@@ -118,20 +119,20 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Create New Password',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF4B5563),
+                            color: AppColors.textSecondary(context),
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Password must contain at least 8 characters, uppercase, lowercase, number, and special character.',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Color(0xFF9CA3AF),
+                            color: AppColors.textMuted(context),
                           ),
                         ),
                         const SizedBox(height: 20),
@@ -234,9 +235,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
-            color: Color(0xFF111418),
+            color: AppColors.textPrimary(context),
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -245,26 +246,28 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
           controller: ctrl,
           obscureText: obscure,
           onChanged: onChanged,
+          style: TextStyle(color: AppColors.textPrimary(context)),
           decoration: InputDecoration(
             hintText: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
-            prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF9CA3AF), size: 20),
+            hintStyle: TextStyle(color: AppColors.textMuted(context)),
+            prefixIcon: Icon(Icons.lock_outline, color: AppColors.textMuted(context), size: 20),
             suffixIcon: IconButton(
               icon: Icon(
                 obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                color: const Color(0xFF9CA3AF),
+                color: AppColors.textMuted(context),
                 size: 20,
               ),
               onPressed: toggle,
             ),
             filled: true,
-            fillColor: const Color(0xFFF9FAFB),
+            fillColor: AppColors.surfaceAlt(context),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+              borderSide: BorderSide(color: AppColors.border(context)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+              borderSide: BorderSide(color: AppColors.border(context)),
             ),
             contentPadding: const EdgeInsets.symmetric(vertical: 14),
           ),
@@ -308,7 +311,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   height: 4,
                   margin: EdgeInsets.only(right: i < 4 ? 4 : 0),
                   decoration: BoxDecoration(
-                    color: i < score ? color : const Color(0xFFE5E7EB),
+                    color: i < score ? color : AppColors.border(context),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),

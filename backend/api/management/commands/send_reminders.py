@@ -74,6 +74,15 @@ class Command(BaseCommand):
                 if not schedule:
                     continue
 
+                # Skip medications that have been marked as history —
+                # past meds should never trigger reminders.
+                if med.get('isHistory'):
+                    continue
+
+                # Skip PRN ("taken when needed") meds — no reminders.
+                if med.get('isPrn'):
+                    continue
+
                 # Check date range
                 start_str = med.get('startDate')
                 end_str = med.get('endDate')

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class AdminSettingsScreen extends StatelessWidget {
   final VoidCallback onLogout;
@@ -7,7 +8,7 @@ class AdminSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFF0F4FF),
+      color: AppColors.background(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

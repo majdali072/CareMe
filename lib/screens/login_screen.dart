@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 import 'otp_verification_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -22,16 +23,28 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
+  String? _errorMessage;
+
+  bool _isValidEmail(String email) =>
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+
+  bool _passwordMeetsAll(String password) =>
+      password.length >= 8 &&
+      password.contains(RegExp(r'[A-Z]')) &&
+      password.contains(RegExp(r'[a-z]')) &&
+      password.contains(RegExp(r'[0-9]')) &&
+      password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'));
+
+  void _setError(String? msg) {
+    if (!mounted) return;
+    setState(() => _errorMessage = msg);
+  }
 
   void _handleSubmit() async {
+    _setError(null);
+
     if (_isRegistering && !_acceptedTerms) {
       setState(() => _showTermsError = true);
-      return;
-    }
-    if (_isRegistering && _passwordCtrl.text != _confirmPasswordCtrl.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match!')),
-      );
       return;
     }
 
@@ -42,23 +55,21 @@ class _LoginScreenState extends State<LoginScreen> {
         : email.split('@').first;
 
     if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all fields')),
-      );
+      _setError('Please fill in all fields.');
+      return;
+    }
+    if (!_isValidEmail(email)) {
+      _setError('Please enter a valid email address.');
       return;
     }
 
     if (_isRegistering) {
-      final issues = <String>[];
-      if (password.length < 8) issues.add('at least 8 characters');
-      if (!password.contains(RegExp(r'[A-Z]'))) issues.add('an uppercase letter');
-      if (!password.contains(RegExp(r'[a-z]'))) issues.add('a lowercase letter');
-      if (!password.contains(RegExp(r'[0-9]'))) issues.add('a number');
-      if (!password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))) issues.add('a special character');
-      if (issues.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Password must contain: ${issues.join(", ")}')),
-        );
+      if (_passwordCtrl.text != _confirmPasswordCtrl.text) {
+        _setError("The two passwords don't match.");
+        return;
+      }
+      if (!_passwordMeetsAll(password)) {
+        _setError('Your password does not meet all requirements yet.');
         return;
       }
     }
@@ -102,24 +113,16 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Connection error. Is the server running?')),
-        );
-      }
+      _setError(e.message);
+    } catch (_) {
+      _setError("Couldn't reach the server. Check your connection and try again.");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _handleGoogleSignIn() async {
+    _setError(null);
     setState(() => _isLoading = true);
     try {
       final googleSignIn = GoogleSignIn(scopes: [
@@ -146,19 +149,11 @@ class _LoginScreenState extends State<LoginScreen> {
           widget.onLogin(userName, userEmail, isAdmin);
         }
       } on ApiException catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Auth error: ${e.message}')),
-          );
-        }
+        _setError(e.message);
       }
     } catch (e) {
       debugPrint('Google Sign-In Error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Google sign-in failed: $e')),
-        );
-      }
+      _setError("Google sign-in failed. Please try again.");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -174,19 +169,19 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              decoration: BoxDecoration(
+                color: AppColors.surface(context),
+                border: Border(bottom: BorderSide(color: AppColors.border(context))),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Terms & Privacy',
+                  Text('Terms & Privacy',
                       style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.textPrimary(context))),
                   IconButton(
-                      icon: const Icon(Icons.close),
+                      icon: Icon(Icons.close, color: AppColors.textPrimary(context)),
                       onPressed: () => Navigator.pop(ctx)),
                 ],
               ),
@@ -234,7 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _termsSection(String title, String content) {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: AppColors.border(context)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -243,17 +238,17 @@ class _LoginScreenState extends State<LoginScreen> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Text(title,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary(context))),
           ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(content,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary(context))),
           ),
         ],
       ),
@@ -329,7 +324,7 @@ Contact: support@careme.app''';
                   // Form Card
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.97),
+                      color: AppColors.surface(context).withOpacity(0.97),
                       borderRadius: BorderRadius.circular(28),
                       boxShadow: [
                         BoxShadow(
@@ -346,10 +341,10 @@ Contact: support@careme.app''';
                           _isRegistering
                               ? 'Sign up to get started'
                               : 'Sign in to continue',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF4B5563)),
+                              color: AppColors.textSecondary(context)),
                         ),
                         const SizedBox(height: 20),
                         if (_isRegistering) ...[
@@ -370,6 +365,8 @@ Contact: support@careme.app''';
                             onChanged: _isRegistering ? (_) => setState(() {}) : null),
                         if (_isRegistering) ...[
                           _buildPasswordStrengthBar(_passwordCtrl.text),
+                          const SizedBox(height: 8),
+                          _buildPasswordChecklist(_passwordCtrl.text),
                           const SizedBox(height: 14),
                           _buildPasswordField(
                               _confirmPasswordCtrl,
@@ -388,6 +385,10 @@ Contact: support@careme.app''';
                                 style:
                                     TextStyle(color: Colors.red, fontSize: 12)),
                           ),
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 14),
+                          _buildErrorBanner(_errorMessage!),
+                        ],
                         const SizedBox(height: 20),
                         SizedBox(
                           width: double.infinity,
@@ -427,20 +428,20 @@ Contact: support@careme.app''';
                                 width: 20,
                                 height: 20,
                               ),
-                              label: const Text(
+                              label: Text(
                                 'Sign in with Google',
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
-                                  color: Color(0xFF111418),
+                                  color: AppColors.textPrimary(context),
                                 ),
                               ),
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(vertical: 14),
-                                side: const BorderSide(color: Color(0xFFE5E7EB)),
+                                side: BorderSide(color: AppColors.border(context)),
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14)),
-                                backgroundColor: Colors.white,
+                                backgroundColor: AppColors.surface(context),
                               ),
                             ),
                           ),
@@ -454,8 +455,8 @@ Contact: support@careme.app''';
                                   _isRegistering
                                       ? 'Already have an account? '
                                       : "Don't have an account? ",
-                                  style: const TextStyle(
-                                      color: Color(0xFF6B7280), fontSize: 14)),
+                                  style: TextStyle(
+                                      color: AppColors.textSecondary(context), fontSize: 14)),
                               GestureDetector(
                                 onTap: () => setState(
                                     () => _isRegistering = !_isRegistering),
@@ -524,25 +525,27 @@ Contact: support@careme.app''';
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 13,
-                color: Color(0xFF111418),
+                color: AppColors.textPrimary(context),
                 fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
           keyboardType: keyboardType,
+          style: TextStyle(color: AppColors.textPrimary(context)),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, color: const Color(0xFF9CA3AF), size: 20),
+            hintStyle: TextStyle(color: AppColors.textMuted(context)),
+            prefixIcon: Icon(icon, color: AppColors.textMuted(context), size: 20),
             filled: true,
-            fillColor: const Color(0xFFF9FAFB),
+            fillColor: AppColors.surfaceAlt(context),
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+                borderSide: BorderSide(color: AppColors.border(context))),
             enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+                borderSide: BorderSide(color: AppColors.border(context))),
             contentPadding: const EdgeInsets.symmetric(vertical: 14),
           ),
         ),
@@ -556,40 +559,139 @@ Contact: support@careme.app''';
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 13,
-                color: Color(0xFF111418),
+                color: AppColors.textPrimary(context),
                 fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
           obscureText: obscure,
           onChanged: onChanged,
+          style: TextStyle(color: AppColors.textPrimary(context)),
           decoration: InputDecoration(
             hintText: '••••••••',
-            prefixIcon: const Icon(Icons.lock_outline,
-                color: Color(0xFF9CA3AF), size: 20),
+            hintStyle: TextStyle(color: AppColors.textMuted(context)),
+            prefixIcon: Icon(Icons.lock_outline,
+                color: AppColors.textMuted(context), size: 20),
             suffixIcon: IconButton(
               icon: Icon(
                   obscure
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined,
-                  color: const Color(0xFF9CA3AF),
+                  color: AppColors.textMuted(context),
                   size: 20),
               onPressed: toggle,
             ),
             filled: true,
-            fillColor: const Color(0xFFF9FAFB),
+            fillColor: AppColors.surfaceAlt(context),
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+                borderSide: BorderSide(color: AppColors.border(context))),
             enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+                borderSide: BorderSide(color: AppColors.border(context))),
             contentPadding: const EdgeInsets.symmetric(vertical: 14),
           ),
         ),
       ],
+    );
+  }
+
+  // ── Inline error banner (replaces snackbars) ──────────────────────────────
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        border: Border.all(color: const Color(0xFFFECACA)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline,
+              color: Color(0xFFDC2626), size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                  color: Color(0xFF991B1B),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _setError(null),
+            child: const Icon(Icons.close,
+                color: Color(0xFF991B1B), size: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Live password requirement checklist ───────────────────────────────────
+  Widget _buildPasswordChecklist(String password) {
+    final rules = <_PwRule>[
+      _PwRule('At least 8 characters', password.length >= 8),
+      _PwRule('One uppercase letter (A-Z)',
+          password.contains(RegExp(r'[A-Z]'))),
+      _PwRule('One lowercase letter (a-z)',
+          password.contains(RegExp(r'[a-z]'))),
+      _PwRule('One number (0-9)', password.contains(RegExp(r'[0-9]'))),
+      _PwRule('One special character (!@#\$ etc.)',
+          password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt(context),
+        border: Border.all(color: AppColors.border(context)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Your password needs:',
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary(context)),
+          ),
+          const SizedBox(height: 6),
+          for (final r in rules) ...[
+            Row(
+              children: [
+                Icon(
+                  r.met
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked,
+                  size: 14,
+                  color: r.met
+                      ? const Color(0xFF16A34A)
+                      : AppColors.textMuted(context),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    r.label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: r.met
+                          ? AppColors.textPrimary(context)
+                          : AppColors.textSecondary(context),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+          ],
+        ],
+      ),
     );
   }
 
@@ -628,7 +730,7 @@ Contact: support@careme.app''';
                   height: 4,
                   margin: EdgeInsets.only(right: i < 4 ? 4 : 0),
                   decoration: BoxDecoration(
-                    color: i < score ? color : const Color(0xFFE5E7EB),
+                    color: i < score ? color : AppColors.border(context),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -649,7 +751,7 @@ Contact: support@careme.app''';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: AppColors.surfaceAlt(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -665,7 +767,7 @@ Contact: support@careme.app''';
           Expanded(
             child: Wrap(
               children: [
-                const Text('I accept the ', style: TextStyle(fontSize: 13)),
+                Text('I accept the ', style: TextStyle(fontSize: 13, color: AppColors.textPrimary(context))),
                 GestureDetector(
                   onTap: _showTermsModal,
                   child: const Text('Terms & Privacy Policy',
@@ -682,5 +784,11 @@ Contact: support@careme.app''';
       ),
     );
   }
+}
+
+class _PwRule {
+  final String label;
+  final bool met;
+  const _PwRule(this.label, this.met);
 }
 

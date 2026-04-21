@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/app_models.dart';
+import '../theme/app_theme.dart';
 
 class HomeScreen extends StatelessWidget {
   final String userName;
@@ -22,9 +23,25 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topMeds = medications.take(3).toList();
-    final nextApt = appointments.isNotEmpty ? appointments.first : null;
-    final latestLab = labTests.isNotEmpty ? labTests.first : null;
+    // Only active meds appear in "Most Frequent" (exclude history + PRN
+    // since PRN meds have no recurring schedule).
+    final topMeds = medications
+        .where((m) => !m.isPastOrHistory && !m.isPrn)
+        .take(3)
+        .toList();
+    // "Next appointment" should be the soonest upcoming one.
+    final upcomingSorted = appointments
+        .where((a) => !a.isPast)
+        .toList()
+      ..sort((a, b) {
+        final da = a.fullDate ?? DateTime(2100);
+        final db = b.fullDate ?? DateTime(2100);
+        return da.compareTo(db);
+      });
+    final nextApt = upcomingSorted.isNotEmpty ? upcomingSorted.first : null;
+    // Latest Lab Tests: last 5 entries (assumes the list is already in
+    // reverse-chronological order from the backend).
+    final latestLabs = labTests.take(5).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 100),
@@ -84,26 +101,28 @@ class HomeScreen extends StatelessWidget {
               children: [
                 // Most Frequent Medications
                 _buildCard(
+                  context: context,
                   icon: Icons.medication_rounded,
                   title: 'Most Frequent Medications',
                   child: Column(
                     children: topMeds.isEmpty
-                        ? [const Padding(padding: EdgeInsets.all(12), child: Text('No medications added', style: TextStyle(color: Color(0xFF6B7280))))]
+                        ? [Padding(padding: const EdgeInsets.all(12), child: Text('No medications added', style: TextStyle(color: AppColors.textSecondary(context))))]
                         : topMeds.asMap().entries.map((e) {
                             final med = e.value;
                             final isLast = e.key == topMeds.length - 1;
                             return Container(
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               decoration: BoxDecoration(
-                                border: isLast ? null : const Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+                                border: isLast ? null : Border(bottom: BorderSide(color: AppColors.border(context))),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(med.name, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF111418))),
+                                  Text(med.name, style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary(context))),
                                   const SizedBox(height: 2),
-                                  Text('${med.dosage} • ${med.frequency}', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-                                  Text(med.time, style: const TextStyle(color: Color(0xFF1976D2), fontSize: 13)),
+                                  Text('${med.dosage} • ${med.computedFrequency}', style: TextStyle(color: AppColors.textSecondary(context), fontSize: 13)),
+                                  if (med.time.isNotEmpty)
+                                    Text(med.time, style: const TextStyle(color: Color(0xFF1976D2), fontSize: 13)),
                                 ],
                               ),
                             );
@@ -115,72 +134,128 @@ class HomeScreen extends StatelessWidget {
 
                 // Next Appointment
                 _buildCard(
+                  context: context,
                   icon: Icons.calendar_today_rounded,
                   title: 'Next Appointment',
                   child: nextApt == null
-                      ? const Padding(padding: EdgeInsets.all(12), child: Text('No upcoming appointments', style: TextStyle(color: Color(0xFF6B7280))))
-                      : Row(
+                      ? Padding(padding: const EdgeInsets.all(12), child: Text('No upcoming appointments', style: TextStyle(color: AppColors.textSecondary(context))))
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 48, height: 48,
-                              decoration: BoxDecoration(color: const Color(0xFFE3F2FD), borderRadius: BorderRadius.circular(24)),
-                              child: const Icon(Icons.calendar_today_rounded, color: Color(0xFF1976D2)),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(nextApt.title, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF111418))),
-                                  Text(nextApt.type, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-                                  const SizedBox(height: 8),
-                                  Row(children: [
-                                    const Icon(Icons.calendar_today, size: 14, color: Color(0xFF1976D2)),
-                                    const SizedBox(width: 4),
-                                    Text('November ${nextApt.date}, 2025', style: const TextStyle(fontSize: 13, color: Color(0xFF111418))),
-                                  ]),
-                                  const SizedBox(height: 4),
-                                  Row(children: [
-                                    const Icon(Icons.access_time, size: 14, color: Color(0xFF1976D2)),
-                                    const SizedBox(width: 4),
-                                    Text(nextApt.time, style: const TextStyle(fontSize: 13, color: Color(0xFF111418))),
-                                  ]),
-                                  const SizedBox(height: 4),
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 18),
-                                    child: Text(nextApt.location, style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            Text(nextApt.title,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary(context))),
+                            if (nextApt.type.isNotEmpty)
+                              Text(nextApt.type,
+                                  style: TextStyle(
+                                      color: AppColors.textSecondary(context),
+                                      fontSize: 13)),
+                            const SizedBox(height: 8),
+                            Row(children: [
+                              const Icon(Icons.calendar_today,
+                                  size: 14, color: Color(0xFF1976D2)),
+                              const SizedBox(width: 4),
+                              Text(_formatFullDate(nextApt),
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.textPrimary(context))),
+                            ]),
+                            const SizedBox(height: 4),
+                            Row(children: [
+                              const Icon(Icons.access_time,
+                                  size: 14, color: Color(0xFF1976D2)),
+                              const SizedBox(width: 4),
+                              Text(nextApt.time,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.textPrimary(context))),
+                            ]),
+                            if (nextApt.location.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(children: [
+                                const Icon(Icons.location_on_outlined,
+                                    size: 14, color: Color(0xFF1976D2)),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(nextApt.location,
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.textSecondary(
+                                              context)),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                              ]),
+                            ],
                           ],
                         ),
                 ),
 
                 const SizedBox(height: 14),
 
-                // Latest Lab Test
+                // Latest Lab Tests (last 5)
                 _buildCard(
+                  context: context,
                   icon: Icons.description_outlined,
-                  title: 'Latest Lab Test',
-                  child: latestLab == null
-                      ? const Padding(padding: EdgeInsets.all(12), child: Text('No lab tests added', style: TextStyle(color: Color(0xFF6B7280))))
+                  title: 'Latest Lab Tests',
+                  child: latestLabs.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text('No lab tests added',
+                              style: TextStyle(
+                                  color: AppColors.textSecondary(context))))
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(latestLab.name, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF111418))),
-                            const SizedBox(height: 4),
-                            Text(latestLab.date, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          children: latestLabs.asMap().entries.map((e) {
+                            final lab = e.value;
+                            final isLast = e.key == latestLabs.length - 1;
+                            return Container(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFDCFCE7),
-                                borderRadius: BorderRadius.circular(20),
+                                border: isLast
+                                    ? null
+                                    : Border(
+                                        bottom: BorderSide(
+                                            color:
+                                                AppColors.border(context))),
                               ),
-                              child: const Text('Results available', style: TextStyle(color: Color(0xFF15803D), fontSize: 13)),
-                            ),
-                          ],
+                              child: Row(
+                                children: [
+                                  Icon(Icons.description_outlined,
+                                      size: 16,
+                                      color: AppColors.accent(context)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(lab.name,
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                                color: AppColors.textPrimary(
+                                                    context))),
+                                        if (lab.date.isNotEmpty)
+                                          Text(lab.date,
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors
+                                                      .textSecondary(
+                                                          context))),
+                                      ],
+                                    ),
+                                  ),
+                                  if (lab.hasFile)
+                                    Icon(Icons.attach_file,
+                                        size: 14,
+                                        color:
+                                            AppColors.textMuted(context)),
+                                ],
+                              ),
+                            );
+                          }).toList(),
                         ),
                 ),
               ],
@@ -191,10 +266,21 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildCard({required IconData icon, required String title, required Widget child}) {
+  static const _months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  String _formatFullDate(Appointment apt) {
+    final d = apt.fullDate;
+    if (d == null) return 'Day ${apt.date}';
+    return '${_months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
+  Widget _buildCard({required IconData icon, required String title, required Widget child, required BuildContext context}) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface(context),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 2))],
       ),

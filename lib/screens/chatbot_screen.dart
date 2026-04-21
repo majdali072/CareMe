@@ -1,7 +1,13 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/app_models.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class ChatbotScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -12,11 +18,20 @@ class ChatbotScreen extends StatefulWidget {
   State<ChatbotScreen> createState() => _ChatbotScreenState();
 }
 
+class _ChatAttachment {
+  final Uint8List bytes;
+  final String name;
+  final String mimeType;
+  _ChatAttachment({required this.bytes, required this.name, required this.mimeType});
+  bool get isImage => mimeType.startsWith('image/');
+}
+
 class _ChatbotScreenState extends State<ChatbotScreen> {
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   bool _isTyping = false;
   int _nextId = 2;
+  _ChatAttachment? _attachment;
 
   List<ChatMessage> _messages = [
     ChatMessage(
@@ -31,12 +46,17 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     'Show my medications',
     'Next appointment',
     'Latest lab results',
-    'Set a reminder',
   ];
 
+  // Cap history sent to the backend to the last N turns so token count
+  // and request latency stay bounded as the conversation grows.
+  static const int _historyLimit = 10;
+
   List<Map<String, dynamic>> _buildHistory() {
-    // Send previous messages (skip the initial greeting) as context
-    return _messages.skip(1).map((m) => {
+    // Skip the initial greeting, then keep only the last `_historyLimit` turns.
+    final prior = _messages.skip(1).toList();
+    final start = prior.length > _historyLimit ? prior.length - _historyLimit : 0;
+    return prior.sublist(start).map((m) => {
       'text': m.text,
       'isUser': m.isUser,
     }).toList();
@@ -44,43 +64,99 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   void _sendMessage([String? text]) async {
     final content = text ?? _inputCtrl.text.trim();
-    if (content.isEmpty) return;
+    final attachment = _attachment;
+    if (content.isEmpty && attachment == null) return;
     _inputCtrl.clear();
 
-    final userMsg = ChatMessage(id: _nextId++, text: content, isUser: true, timestamp: DateTime.now());
+    final history = _buildHistory();
+    // Describe the attachment in the visible user-message bubble so there's
+    // a record of what was sent.
+    String visibleText = content;
+    if (attachment != null) {
+      final tag = attachment.isImage
+          ? '[Image attached: ${attachment.name}]'
+          : '[File attached: ${attachment.name}]';
+      visibleText = content.isEmpty ? tag : '$tag\n$content';
+    }
+
+    final Map<String, String>? wirePayload = attachment == null
+        ? null
+        : {
+            'mimeType': attachment.mimeType,
+            'data': base64Encode(attachment.bytes),
+          };
+
+    final userMsg = ChatMessage(
+        id: _nextId++,
+        text: visibleText,
+        isUser: true,
+        timestamp: DateTime.now());
+    final botId = _nextId++;
+    final botTimestamp = DateTime.now();
+
     setState(() {
       _messages.add(userMsg);
       _isTyping = true;
+      _attachment = null; // clear after sending
     });
     _scrollToBottom();
 
+    final buffer = StringBuffer();
+    var botInserted = false;
+
+    void upsertBotMessage(String newText) {
+      final msg = ChatMessage(
+        id: botId,
+        text: newText,
+        isUser: false,
+        timestamp: botTimestamp,
+      );
+      if (!botInserted) {
+        _messages.add(msg);
+        botInserted = true;
+      } else {
+        final idx = _messages.indexWhere((m) => m.id == botId);
+        if (idx != -1) _messages[idx] = msg;
+      }
+    }
+
     try {
-      final reply = await ApiService.sendChatMessage(content, _buildHistory());
-      if (!mounted) return;
-      final botMsg = ChatMessage(id: _nextId++, text: reply, isUser: false, timestamp: DateTime.now());
-      setState(() {
-        _messages.add(botMsg);
-        _isTyping = false;
-      });
+      await for (final chunk
+          in ApiService.streamChatMessage(content, history, attachment: wirePayload)) {
+        if (!mounted) return;
+        buffer.write(chunk);
+        setState(() {
+          _isTyping = false;
+          upsertBotMessage(buffer.toString());
+        });
+        _scrollToBottom();
+      }
+      if (!botInserted && mounted) {
+        // Stream closed without any content.
+        setState(() {
+          _isTyping = false;
+          upsertBotMessage("I didn't catch that — could you ask again?");
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       String errorText;
-      if (e.toString().contains('TimeoutException') || e.toString().contains('timed out')) {
-        errorText = "The request timed out. The AI server may be busy — please try again in a moment.";
-      } else if (e.toString().contains('SocketException') || e.toString().contains('Connection refused')) {
-        errorText = "Could not reach the server. Please check your internet connection and try again.";
+      if (e.toString().contains('TimeoutException') ||
+          e.toString().contains('timed out')) {
+        errorText =
+            "The request timed out. The AI server may be busy — please try again in a moment.";
+      } else if (e.toString().contains('SocketException') ||
+          e.toString().contains('Connection refused')) {
+        errorText =
+            "Could not reach the server. Please check your internet connection and try again.";
       } else {
-        errorText = "Something went wrong: ${e.toString().length > 100 ? e.toString().substring(0, 100) : e}. Please try again.";
+        final msg = e.toString();
+        errorText =
+            "Something went wrong: ${msg.length > 100 ? msg.substring(0, 100) : msg}. Please try again.";
       }
-      final errorMsg = ChatMessage(
-        id: _nextId++,
-        text: errorText,
-        isUser: false,
-        timestamp: DateTime.now(),
-      );
       setState(() {
-        _messages.add(errorMsg);
         _isTyping = false;
+        upsertBotMessage(errorText);
       });
     }
     _scrollToBottom();
@@ -165,49 +241,66 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         // Input Area
         Container(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          color: const Color(0xFFF8FAFC),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 2))],
-            ),
-            child: Row(
-              children: [
-                const SizedBox(width: 6),
-                Expanded(
-                  child: TextField(
-                    controller: _inputCtrl,
-                    onSubmitted: _sendMessage,
-                    decoration: const InputDecoration(
-                      hintText: 'Type your message...',
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                    ),
-                  ),
+          color: AppColors.background(context),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_attachment != null) _buildAttachmentPreview(_attachment!),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surface(context),
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 2))],
                 ),
-                Container(
-                  margin: const EdgeInsets.all(5),
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2563EB), Color(0xFF4F46E5)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.add_circle_outline,
+                          color: AppColors.accent(context), size: 26),
+                      onPressed: _showAttachmentSheet,
+                      tooltip: 'Attach a file or photo',
                     ),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                    onPressed: _sendMessage,
-                  ),
+                    Expanded(
+                      child: TextField(
+                        controller: _inputCtrl,
+                        onSubmitted: _sendMessage,
+                        style: TextStyle(color: AppColors.textPrimary(context)),
+                        decoration: InputDecoration(
+                          hintText: _attachment == null
+                              ? 'Type your message...'
+                              : 'Ask a question about this file...',
+                          hintStyle: TextStyle(color: AppColors.textMuted(context)),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.all(5),
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF2563EB), Color(0xFF4F46E5)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                        onPressed: _sendMessage,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        // Space for bottom nav
-        const SizedBox(height: 80),
+        // Reserve space for the bottom nav + the device's gesture-bar
+        // inset so the chat input doesn't slide under the nav on phones
+        // with a system home-bar at the bottom.
+        SizedBox(height: 68 + MediaQuery.of(context).padding.bottom),
       ],
     );
   }
@@ -238,7 +331,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 gradient: msg.isUser
                     ? const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF4F46E5)], begin: Alignment.topLeft, end: Alignment.bottomRight)
                     : null,
-                color: msg.isUser ? null : Colors.white,
+                color: msg.isUser ? null : AppColors.surface(context),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(18),
                   topRight: const Radius.circular(18),
@@ -250,9 +343,17 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(msg.text, style: TextStyle(fontSize: 14, color: msg.isUser ? Colors.white : const Color(0xFF111418), height: 1.4)),
+                  msg.isUser
+                      ? Text(
+                          msg.text,
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white,
+                              height: 1.4),
+                        )
+                      : _buildMessageContent(msg),
                   const SizedBox(height: 4),
-                  Text(timeStr, style: TextStyle(fontSize: 11, color: msg.isUser ? Colors.white70 : const Color(0xFF9CA3AF))),
+                  Text(timeStr, style: TextStyle(fontSize: 11, color: msg.isUser ? Colors.white70 : AppColors.textMuted(context))),
                 ],
               ),
             ),
@@ -297,7 +398,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppColors.surface(context),
               borderRadius: const BorderRadius.only(topLeft: Radius.circular(18), topRight: Radius.circular(18), bottomLeft: Radius.circular(4), bottomRight: Radius.circular(18)),
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 6)],
             ),
@@ -326,13 +427,258 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     );
   }
 
+  // ── Attachment ────────────────────────────────────────────────────────────
+
+  // ── Markdown rendering ───────────────────────────────────────────────────
+
+  Widget _buildMessageContent(ChatMessage msg) {
+    final textColor = msg.isUser
+        ? Colors.white
+        : AppColors.textPrimary(context);
+    final mutedColor = msg.isUser
+        ? Colors.white70
+        : AppColors.textMuted(context);
+    return MarkdownBody(
+      data: msg.text,
+      selectable: true,
+      onTapLink: (text, href, title) async {
+        // No URL launcher wired up — just ignore for now.
+      },
+      styleSheet: MarkdownStyleSheet(
+        p: TextStyle(fontSize: 14, color: textColor, height: 1.4),
+        strong: TextStyle(
+            fontSize: 14, color: textColor, fontWeight: FontWeight.w700),
+        em: TextStyle(
+            fontSize: 14, color: textColor, fontStyle: FontStyle.italic),
+        del: TextStyle(
+            fontSize: 14,
+            color: textColor,
+            decoration: TextDecoration.lineThrough),
+        listBullet: TextStyle(fontSize: 14, color: textColor),
+        a: TextStyle(
+            color: msg.isUser ? Colors.white : const Color(0xFF2563EB),
+            decoration: TextDecoration.underline),
+        code: TextStyle(
+            fontSize: 13,
+            color: textColor,
+            backgroundColor: msg.isUser
+                ? Colors.white.withOpacity(0.18)
+                : AppColors.surfaceAlt(context)),
+        codeblockDecoration: BoxDecoration(
+          color: msg.isUser
+              ? Colors.white.withOpacity(0.18)
+              : AppColors.surfaceAlt(context),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        h1: TextStyle(fontSize: 18, color: textColor, fontWeight: FontWeight.w700),
+        h2: TextStyle(fontSize: 16, color: textColor, fontWeight: FontWeight.w700),
+        h3: TextStyle(fontSize: 15, color: textColor, fontWeight: FontWeight.w600),
+        blockquote: TextStyle(fontSize: 14, color: mutedColor),
+      ),
+    );
+  }
+
+  Widget _buildAttachmentPreview(_ChatAttachment att) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: AppColors.surface(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border(context)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: att.isImage
+                ? Image.memory(att.bytes, width: 48, height: 48, fit: BoxFit.cover)
+                : Container(
+                    width: 48,
+                    height: 48,
+                    color: AppColors.tint(context),
+                    child: Icon(Icons.description_outlined,
+                        color: AppColors.accent(context)),
+                  ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(att.name,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary(context)),
+                    overflow: TextOverflow.ellipsis),
+                Text(att.mimeType,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textMuted(context))),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, color: AppColors.textMuted(context)),
+            onPressed: () => setState(() => _attachment = null),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAttachmentSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _sheetTile(Icons.camera_alt_outlined, 'Take photo', () async {
+              Navigator.pop(ctx);
+              await _pickFromCamera();
+            }),
+            _sheetTile(Icons.photo_library_outlined, 'Choose from gallery',
+                () async {
+              Navigator.pop(ctx);
+              await _pickFromGallery();
+            }),
+            _sheetTile(Icons.attach_file_outlined, 'Choose a file', () async {
+              Navigator.pop(ctx);
+              await _pickFile();
+            }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetTile(IconData icon, String label, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: AppColors.accent(context)),
+      title: Text(label,
+          style: TextStyle(color: AppColors.textPrimary(context))),
+      onTap: onTap,
+    );
+  }
+
+  Future<void> _pickFromCamera() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1600,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      _setAttachment(bytes, picked.name, _imageMime(picked.name));
+    } catch (e) {
+      _showSnack('Could not open camera: $e');
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1600,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      _setAttachment(bytes, picked.name, _imageMime(picked.name));
+    } catch (e) {
+      _showSnack('Could not open gallery: $e');
+    }
+  }
+
+  Future<void> _pickFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(withData: true);
+      if (result == null || result.files.isEmpty) return;
+      final f = result.files.first;
+      final bytes = f.bytes ??
+          (f.path != null ? await File(f.path!).readAsBytes() : null);
+      if (bytes == null) return;
+      _setAttachment(bytes, f.name, _fileMime(f.name));
+    } catch (e) {
+      _showSnack('Could not pick file: $e');
+    }
+  }
+
+  void _setAttachment(Uint8List bytes, String name, String mimeType) {
+    // Gemini inline_data is limited to ~20 MB. Bail out early on huge files.
+    if (bytes.length > 15 * 1024 * 1024) {
+      _showSnack('File too large. Pick something under 15 MB.');
+      return;
+    }
+    setState(() {
+      _attachment = _ChatAttachment(
+          bytes: bytes, name: name, mimeType: mimeType);
+    });
+  }
+
+  String _imageMime(String name) {
+    final ext = name.toLowerCase().split('.').last;
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+        return 'image/heic';
+      case 'heif':
+        return 'image/heif';
+      case 'gif':
+        return 'image/gif';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
+  String _fileMime(String name) {
+    final ext = name.toLowerCase().split('.').last;
+    switch (ext) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      case 'txt':
+        return 'text/plain';
+      case 'csv':
+        return 'text/csv';
+      case 'json':
+        return 'application/json';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   Widget _buildQuickActions() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Quick Actions', style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+          Text('Quick Actions', style: TextStyle(fontSize: 11, color: AppColors.textMuted(context), fontWeight: FontWeight.w600, letterSpacing: 0.5)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8, runSpacing: 8,
@@ -341,12 +687,12 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface(context),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  border: Border.all(color: AppColors.border(context)),
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4)],
                 ),
-                child: Text(action, style: const TextStyle(fontSize: 13, color: Color(0xFF374151))),
+                child: Text(action, style: TextStyle(fontSize: 13, color: AppColors.textSecondary(context))),
               ),
             )).toList(),
           ),

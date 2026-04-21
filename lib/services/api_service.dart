@@ -481,6 +481,70 @@ class ApiService {
     }
   }
 
+  /// Streaming chat. Yields text chunks as the backend forwards them from
+  /// Gemini's SSE stream. The caller appends each chunk to the visible reply
+  /// so the user sees tokens arrive in real time.
+  ///
+  /// `attachment`, when provided, is sent as `{mimeType, data}` (data is
+  /// base64-encoded) so Gemini can read the image / document inline.
+  static Stream<String> streamChatMessage(
+    String message,
+    List<Map<String, dynamic>> history, {
+    Map<String, String>? attachment,
+  }) async* {
+    Future<http.StreamedResponse> open() async {
+      final request = http.Request('POST', Uri.parse('$_baseUrl/chat/stream/'));
+      request.headers.addAll(_headers);
+      request.headers['Accept'] = 'text/event-stream';
+      request.body = jsonEncode({
+        'message': message,
+        'history': history,
+        if (attachment != null) 'attachment': attachment,
+      });
+      return http.Client().send(request);
+    }
+
+    var streamed = await open().timeout(const Duration(seconds: 30));
+
+    // Refresh token + retry once on 401.
+    if (streamed.statusCode == 401 && await _refreshAccessToken()) {
+      streamed = await open().timeout(const Duration(seconds: 30));
+    }
+
+    if (streamed.statusCode != 200) {
+      final body = await streamed.stream.bytesToString();
+      String msg;
+      try {
+        msg = jsonDecode(body)['error'] ?? body;
+      } catch (_) {
+        msg = body;
+      }
+      throw ApiException(msg.isNotEmpty ? msg : 'Stream failed');
+    }
+
+    final lines = streamed.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+
+    await for (final line in lines) {
+      if (!line.startsWith('data:')) continue;
+      final payload = line.substring(5).trim();
+      if (payload.isEmpty) continue;
+      try {
+        final obj = jsonDecode(payload) as Map<String, dynamic>;
+        if (obj['error'] != null) {
+          throw ApiException(obj['error'].toString());
+        }
+        if (obj['done'] == true) return;
+        final text = obj['text'] as String?;
+        if (text != null && text.isNotEmpty) yield text;
+      } catch (e) {
+        if (e is ApiException) rethrow;
+        // malformed line — skip
+      }
+    }
+  }
+
   // ---------- Export Data ----------
 
   static Future<Uint8List> exportData(List<Map<String, dynamic>> appointments) async {
@@ -649,6 +713,7 @@ class ContactEntry {
   final String phone;
   final double? latitude;
   final double? longitude;
+  final String specialty;
 
   ContactEntry({
     this.id,
@@ -657,6 +722,7 @@ class ContactEntry {
     required this.phone,
     this.latitude,
     this.longitude,
+    this.specialty = '',
   });
 
   factory ContactEntry.fromJson(Map<String, dynamic> json) => ContactEntry(
@@ -666,6 +732,7 @@ class ContactEntry {
         phone: json['phone'] ?? '',
         latitude: (json['latitude'] as num?)?.toDouble(),
         longitude: (json['longitude'] as num?)?.toDouble(),
+        specialty: json['specialty'] ?? '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -674,6 +741,7 @@ class ContactEntry {
         'phone': phone,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,
+        if (specialty.isNotEmpty) 'specialty': specialty,
       };
 }
 
