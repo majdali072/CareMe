@@ -8,13 +8,17 @@ import '../models/app_models.dart';
 
 class ApiService {
   // Public tunnel via ngrok. Change when the tunnel URL rotates.
-  static const String _baseUrl = 'https://entail-joining-pamphlet.ngrok-free.dev/api';
+  static const String _baseUrl = 'https://rimmed-width-versus.ngrok-free.dev/api';
   static String? _token;
   static String? _refreshToken;
   static String? _userId;
   static String? _userName;
   static String? _userEmail;
   static bool _isAdmin = false;
+  // Two-letter language code (e.g. 'en', 'ar'). Sent as Accept-Language so
+  // the backend can localise error messages and tell Gemini what language
+  // to reply in.
+  static String _localeCode = 'en';
 
   static const _kToken = 'auth_token';
   static const _kRefresh = 'auth_refresh';
@@ -82,6 +86,7 @@ class ApiService {
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': '1',
+        'Accept-Language': _localeCode,
         if (_token != null) 'Authorization': 'Bearer $_token',
       };
 
@@ -90,6 +95,16 @@ class ApiService {
   static void setBaseUrl(String url) {
     // For switching between emulator/device/web
   }
+
+  /// Set the user's preferred language. Used for the Accept-Language header
+  /// so Gemini and Django can answer in the right language. Called from
+  /// LocaleController.
+  static void setLocale(String code) {
+    final c = code.trim().toLowerCase();
+    _localeCode = c.isEmpty ? 'en' : c;
+  }
+
+  static String get localeCode => _localeCode;
 
   static Future<void> logout() async {
     if (_refreshToken != null) {
@@ -199,6 +214,12 @@ class ApiService {
       );
       return data;
     }
+    if (data['code'] == 'account_deactivated') {
+      throw DeactivatedAccountException(
+        email: email,
+        isGoogleAccount: data['is_google_account'] == true,
+      );
+    }
     throw ApiException(data['error'] ?? 'Login failed');
   }
 
@@ -224,7 +245,45 @@ class ApiService {
       );
       return data;
     }
+    if (data['code'] == 'account_deactivated') {
+      throw DeactivatedAccountException(
+        email: email,
+        isGoogleAccount: data['is_google_account'] == true,
+      );
+    }
     throw ApiException(data['error'] ?? 'Google authentication failed');
+  }
+
+  /// Re-enable a deactivated account. Returns the same shape as `login` and
+  /// persists the session, so the caller can route straight to the home screen.
+  static Future<Map<String, dynamic>> reactivateAccount({
+    required String email,
+    required String otpCode,
+    String? password,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/users/reactivate/'),
+      headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1'},
+      body: jsonEncode({
+        'email': email,
+        'otp_code': otpCode,
+        if (password != null) 'password': password,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      await _persistSession(
+        token: data['token'],
+        refresh: data['refresh_token'],
+        userId: data['user']['id'],
+        name: data['user']['name'] ?? '',
+        email: data['user']['email'] ?? '',
+        isAdmin: data['user']['is_admin'] == true,
+      );
+      return data;
+    }
+    throw ApiException(data['error'] ?? 'Failed to reactivate account');
   }
 
   // ---------- OTP ----------
@@ -371,6 +430,82 @@ class ApiService {
     }
   }
 
+  // ---------- Medication AI Suggestions ----------
+
+  /// Typeahead suggestions for the Add Medication name field.
+  static Future<List<String>> suggestMedicationNames(String prefix) async {
+    final q = prefix.trim();
+    if (q.length < 2) return const [];
+    try {
+      final response = await _authenticatedRequest(() => http.post(
+            Uri.parse('$_baseUrl/medications/suggest-names/'),
+            headers: _headers,
+            body: jsonEncode({'q': q}),
+          ));
+      if (response.statusCode != 200) return const [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final raw = data['names'];
+      if (raw is List) {
+        return raw.map((n) => n.toString()).where((s) => s.isNotEmpty).toList();
+      }
+      return const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Inline completions for the chatbot input. Returns up to 3 short
+  /// follow-up phrases the user might want to type next; empty list on any
+  /// failure so the UI just hides the chip strip.
+  static Future<List<String>> chatSuggest(
+    String partial,
+    List<Map<String, dynamic>> history,
+  ) async {
+    if (partial.trim().length < 2) return const [];
+    try {
+      final response = await _authenticatedRequest(() => http.post(
+            Uri.parse('$_baseUrl/chat/suggest/'),
+            headers: _headers,
+            body: jsonEncode({'q': partial, 'history': history}),
+          ));
+      if (response.statusCode != 200) return const [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final raw = data['suggestions'];
+      if (raw is List) {
+        return raw
+            .map((n) => n.toString().trim())
+            .where((s) => s.isNotEmpty)
+            .take(3)
+            .toList();
+      }
+      return const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Ask the AI to fill purpose/sideEffects for a known med.
+  /// Returns an empty map on failure so callers can leave fields untouched.
+  static Future<Map<String, String>> suggestMedicationFields(String name) async {
+    final n = name.trim();
+    if (n.isEmpty) return const {};
+    try {
+      final response = await _authenticatedRequest(() => http.post(
+            Uri.parse('$_baseUrl/medications/suggest-fields/'),
+            headers: _headers,
+            body: jsonEncode({'name': n}),
+          ));
+      if (response.statusCode != 200) return const {};
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return {
+        'purpose': (data['purpose'] ?? '').toString(),
+        'sideEffects': (data['sideEffects'] ?? '').toString(),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
   // ---------- Lab Tests ----------
 
   static Future<List<LabTest>> getLabTests() async {
@@ -492,56 +627,64 @@ class ApiService {
     List<Map<String, dynamic>> history, {
     Map<String, String>? attachment,
   }) async* {
-    Future<http.StreamedResponse> open() async {
-      final request = http.Request('POST', Uri.parse('$_baseUrl/chat/stream/'));
-      request.headers.addAll(_headers);
-      request.headers['Accept'] = 'text/event-stream';
-      request.body = jsonEncode({
-        'message': message,
-        'history': history,
-        if (attachment != null) 'attachment': attachment,
-      });
-      return http.Client().send(request);
-    }
-
-    var streamed = await open().timeout(const Duration(seconds: 30));
-
-    // Refresh token + retry once on 401.
-    if (streamed.statusCode == 401 && await _refreshAccessToken()) {
-      streamed = await open().timeout(const Duration(seconds: 30));
-    }
-
-    if (streamed.statusCode != 200) {
-      final body = await streamed.stream.bytesToString();
-      String msg;
-      try {
-        msg = jsonDecode(body)['error'] ?? body;
-      } catch (_) {
-        msg = body;
+    // One client owns this whole stream. We close it in `finally` so that
+    // cancelling the consumer's subscription (the chatbot's stop button)
+    // tears down the underlying HTTP connection instead of leaking it.
+    final client = http.Client();
+    try {
+      Future<http.StreamedResponse> open() async {
+        final request = http.Request('POST', Uri.parse('$_baseUrl/chat/stream/'));
+        request.headers.addAll(_headers);
+        request.headers['Accept'] = 'text/event-stream';
+        request.body = jsonEncode({
+          'message': message,
+          'history': history,
+          if (attachment != null) 'attachment': attachment,
+        });
+        return client.send(request);
       }
-      throw ApiException(msg.isNotEmpty ? msg : 'Stream failed');
-    }
 
-    final lines = streamed.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter());
+      var streamed = await open().timeout(const Duration(seconds: 30));
 
-    await for (final line in lines) {
-      if (!line.startsWith('data:')) continue;
-      final payload = line.substring(5).trim();
-      if (payload.isEmpty) continue;
-      try {
-        final obj = jsonDecode(payload) as Map<String, dynamic>;
-        if (obj['error'] != null) {
-          throw ApiException(obj['error'].toString());
+      // Refresh token + retry once on 401.
+      if (streamed.statusCode == 401 && await _refreshAccessToken()) {
+        streamed = await open().timeout(const Duration(seconds: 30));
+      }
+
+      if (streamed.statusCode != 200) {
+        final body = await streamed.stream.bytesToString();
+        String msg;
+        try {
+          msg = jsonDecode(body)['error'] ?? body;
+        } catch (_) {
+          msg = body;
         }
-        if (obj['done'] == true) return;
-        final text = obj['text'] as String?;
-        if (text != null && text.isNotEmpty) yield text;
-      } catch (e) {
-        if (e is ApiException) rethrow;
-        // malformed line — skip
+        throw ApiException(msg.isNotEmpty ? msg : 'Stream failed');
       }
+
+      final lines = streamed.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter());
+
+      await for (final line in lines) {
+        if (!line.startsWith('data:')) continue;
+        final payload = line.substring(5).trim();
+        if (payload.isEmpty) continue;
+        try {
+          final obj = jsonDecode(payload) as Map<String, dynamic>;
+          if (obj['error'] != null) {
+            throw ApiException(obj['error'].toString());
+          }
+          if (obj['done'] == true) return;
+          final text = obj['text'] as String?;
+          if (text != null && text.isNotEmpty) yield text;
+        } catch (e) {
+          if (e is ApiException) rethrow;
+          // malformed line — skip
+        }
+      }
+    } finally {
+      client.close();
     }
   }
 
@@ -639,13 +782,25 @@ class ApiService {
     ));
 
     if (response.statusCode == 200) {
-      _token = null;
-      _refreshToken = null;
-      _userId = null;
+      await _clearSession();
       return;
     }
     final data = jsonDecode(response.body);
     throw ApiException(data['error'] ?? 'Failed to deactivate account');
+  }
+
+  static Future<void> deleteAccount() async {
+    final response = await _authenticatedRequest(() => http.post(
+      Uri.parse('$_baseUrl/users/delete/'),
+      headers: _headers,
+    ));
+
+    if (response.statusCode == 200) {
+      await _clearSession();
+      return;
+    }
+    final data = jsonDecode(response.body);
+    throw ApiException(data['error'] ?? 'Failed to delete account');
   }
 
   // ---------- Doctors & Pharmacies (admin-managed directory) ----------
@@ -751,4 +906,16 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Thrown when login returns 403 because the account has been deactivated.
+/// Carries the data the reactivation flow needs.
+class DeactivatedAccountException extends ApiException {
+  final String email;
+  final bool isGoogleAccount;
+
+  DeactivatedAccountException({
+    required this.email,
+    required this.isGoogleAccount,
+  }) : super('This account has been deactivated.');
 }

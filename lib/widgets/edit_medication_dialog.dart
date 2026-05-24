@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
 import '../theme/app_theme.dart';
 
@@ -119,7 +120,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
       context: context,
       builder: (_) {
         return AlertDialog(
-          title: const Text('Select Day'),
+          title: Text(AppLocalizations.of(context).t('dlg_med_add_day')),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -232,14 +233,14 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Taken when needed',
+                  Text(AppLocalizations.of(context).t('dlg_med_prn_label'),
                       style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary(context))),
                   const SizedBox(height: 2),
                   Text(
-                      'No schedule or reminders. Use for as-needed meds like painkillers.',
+                      AppLocalizations.of(context).t('dlg_med_prn_sub'),
                       style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textMuted(context))),
@@ -262,8 +263,8 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
       ),
       child: Row(
         children: [
-          Expanded(child: _statusOption(label: 'Active', isHistory: false)),
-          Expanded(child: _statusOption(label: 'History', isHistory: true)),
+          Expanded(child: _statusOption(label: AppLocalizations.of(context).t('dlg_med_status_active'), isHistory: false)),
+          Expanded(child: _statusOption(label: AppLocalizations.of(context).t('dlg_med_status_history'), isHistory: true)),
         ],
       ),
     );
@@ -319,9 +320,9 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
             ),
             child: Row(
               children: [
-                const Expanded(
-                  child: Text('Edit Medication',
-                      style: TextStyle(
+                Expanded(
+                  child: Text(AppLocalizations.of(context).t('dlg_edit_medication_title'),
+                      style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
                           fontSize: 17)),
@@ -343,17 +344,17 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                 children: [
 
             // Basic fields
-            _field('Name', _name),
-            _field('Dosage', _dosage),
-            _field('Purpose', _purpose),
-            _field('Possible Side Effects', _sideEffects, maxLines: 2),
+            _field(AppLocalizations.of(context).t('dlg_med_name_label'), _name),
+            _field(AppLocalizations.of(context).t('meds_dosage_label'), _dosage),
+            _field(AppLocalizations.of(context).t('dlg_med_purpose_label'), _purpose),
+            _field(AppLocalizations.of(context).t('meds_possible_side_effects'), _sideEffects, maxLines: 2),
 
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 12),
 
             // Status (Active / History)
-            Text('Status',
+            Text(AppLocalizations.of(context).t('dlg_med_status_label_no_star'),
                 style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
@@ -377,7 +378,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                   children: [
                     Row(
                       children: [
-                        Text('Schedule',
+                        Text(AppLocalizations.of(context).t('dlg_med_reminder_schedule'),
                             style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
@@ -403,7 +404,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                                     size: 14,
                                     color: AppColors.accent(context)),
                                 const SizedBox(width: 4),
-                                Text('Add Day',
+                                Text(AppLocalizations.of(context).t('dlg_med_add_day'),
                                     style: TextStyle(
                                         color: AppColors.accent(context),
                                         fontSize: 12,
@@ -425,7 +426,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                           border: Border.all(color: AppColors.border(context)),
                         ),
                         child: Center(
-                          child: Text('No days added yet',
+                          child: Text(AppLocalizations.of(context).t('dlg_med_no_days_yet'),
                               style: TextStyle(
                                   color: AppColors.textMuted(context),
                                   fontSize: 13)),
@@ -456,7 +457,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                   children: [
                     Row(
                       children: [
-                        Text('Duration',
+                        Text(AppLocalizations.of(context).t('meds_duration'),
                             style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
@@ -471,7 +472,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                     const SizedBox(height: 10),
 
                     _dateTile(
-                      label: 'From',
+                      label: AppLocalizations.of(context).t('meds_from_short'),
                       date: _startDate,
                       onTap: () async {
                         final d = await _pickDate(_startDate);
@@ -486,7 +487,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                       child: IgnorePointer(
                         ignoring: _isLifetime,
                         child: _dateTile(
-                          label: 'To',
+                          label: AppLocalizations.of(context).t('meds_to_short'),
                           date: _endDate,
                           onTap: () async {
                             final d = await _pickDate(_endDate);
@@ -530,7 +531,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                     const SizedBox(width: 10),
                     const Icon(Icons.all_inclusive, size: 16, color: Color(0xFF2563EB)),
                     const SizedBox(width: 6),
-                    Text('Lifetime medication',
+                    Text(AppLocalizations.of(context).t('dlg_med_lifetime_medication'),
                         style: TextStyle(fontSize: 14, color: AppColors.textPrimary(context))),
                     if (_isHistory || _isPrn) ...[
                       const SizedBox(width: 6),
@@ -556,8 +557,8 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                           borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('Cancel',
-                        style: TextStyle(color: Color(0xFF6B7280))),
+                    child: Text(AppLocalizations.of(context).t('common_cancel'),
+                        style: const TextStyle(color: Color(0xFF6B7280))),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -572,8 +573,8 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       elevation: 0,
                     ),
-                    child: const Text('Save',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    child: Text(AppLocalizations.of(context).t('common_save'),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                   ),
                 ),
               ],
@@ -655,8 +656,8 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                   const Divider(color: Color(0xFFE5E7EB), height: 1),
                   const SizedBox(height: 10),
                   if (entry.times.isEmpty)
-                    const Text('No times added',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)))
+                    Text(AppLocalizations.of(context).t('dlg_med_no_times'),
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)))
                   else
                     Wrap(
                       spacing: 8,
@@ -701,7 +702,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                         children: [
                           Icon(Icons.add_alarm, size: 14, color: AppColors.accent(context)),
                           const SizedBox(width: 4),
-                          Text('Add Time',
+                          Text(AppLocalizations.of(context).t('dlg_med_add_time'),
                               style: TextStyle(
                                   color: AppColors.accent(context),
                                   fontSize: 12,

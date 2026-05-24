@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
 import '../theme/app_theme.dart';
 
@@ -23,6 +24,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
     // Only active meds appear in "Most Frequent" (exclude history + PRN
     // since PRN meds have no recurring schedule).
     final topMeds = medications
@@ -103,10 +105,11 @@ class HomeScreen extends StatelessWidget {
                 _buildCard(
                   context: context,
                   icon: Icons.medication_rounded,
-                  title: 'Most Frequent Medications',
+                  title: t.t('home_most_frequent_meds'),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: topMeds.isEmpty
-                        ? [Padding(padding: const EdgeInsets.all(12), child: Text('No medications added', style: TextStyle(color: AppColors.textSecondary(context))))]
+                        ? [Padding(padding: const EdgeInsets.all(12), child: Text(t.t('home_no_meds_added'), style: TextStyle(color: AppColors.textSecondary(context))))]
                         : topMeds.asMap().entries.map((e) {
                             final med = e.value;
                             final isLast = e.key == topMeds.length - 1;
@@ -136,9 +139,9 @@ class HomeScreen extends StatelessWidget {
                 _buildCard(
                   context: context,
                   icon: Icons.calendar_today_rounded,
-                  title: 'Next Appointment',
+                  title: t.t('home_next_appointment'),
                   child: nextApt == null
-                      ? Padding(padding: const EdgeInsets.all(12), child: Text('No upcoming appointments', style: TextStyle(color: AppColors.textSecondary(context))))
+                      ? Padding(padding: const EdgeInsets.all(12), child: Text(t.t('home_upcoming_empty'), style: TextStyle(color: AppColors.textSecondary(context))))
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -156,7 +159,7 @@ class HomeScreen extends StatelessWidget {
                               const Icon(Icons.calendar_today,
                                   size: 14, color: Color(0xFF1976D2)),
                               const SizedBox(width: 4),
-                              Text(_formatFullDate(nextApt),
+                              Text(_formatFullDate(nextApt, context),
                                   style: TextStyle(
                                       fontSize: 13,
                                       color: AppColors.textPrimary(context))),
@@ -197,11 +200,11 @@ class HomeScreen extends StatelessWidget {
                 _buildCard(
                   context: context,
                   icon: Icons.description_outlined,
-                  title: 'Latest Lab Tests',
+                  title: t.t('home_latest_labs'),
                   child: latestLabs.isEmpty
                       ? Padding(
                           padding: const EdgeInsets.all(12),
-                          child: Text('No lab tests added',
+                          child: Text(t.t('home_no_labs_added'),
                               style: TextStyle(
                                   color: AppColors.textSecondary(context))))
                       : Column(
@@ -266,15 +269,17 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  static const _months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+  static const _monthKeys = [
+    'month_jan', 'month_feb', 'month_mar', 'month_apr',
+    'month_may', 'month_jun', 'month_jul', 'month_aug',
+    'month_sep', 'month_oct', 'month_nov', 'month_dec',
   ];
 
-  String _formatFullDate(Appointment apt) {
+  String _formatFullDate(Appointment apt, BuildContext context) {
+    final t = AppLocalizations.of(context);
     final d = apt.fullDate;
-    if (d == null) return 'Day ${apt.date}';
-    return '${_months[d.month - 1]} ${d.day}, ${d.year}';
+    if (d == null) return t.t('home_day_prefix', {'date': apt.date.toString()});
+    return '${t.t(_monthKeys[d.month - 1])} ${d.day}, ${d.year}';
   }
 
   Widget _buildCard({required IconData icon, required String title, required Widget child, required BuildContext context}) {

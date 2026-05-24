@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
 import '../theme/app_theme.dart';
 
@@ -62,7 +63,7 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
               decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1976D2), Color(0xFF0D47A1)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
               child: Row(
                 children: [
-                  const Expanded(child: Text('Add Lab Test', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 17))),
+                  Expanded(child: Text(AppLocalizations.of(context).t('dlg_add_lab_title'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 17))),
                   GestureDetector(onTap: () => Navigator.pop(context), child: const Icon(Icons.close, color: Colors.white)),
                 ],
               ),
@@ -71,16 +72,19 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  _field('Test Name', _nameCtrl, 'e.g., Complete Blood Count'),
+                  _field(AppLocalizations.of(context).t('dlg_lab_name_label'),
+                      _nameCtrl, AppLocalizations.of(context).t('dlg_lab_name_hint')),
                   const SizedBox(height: 14),
-                  _datePickerField('Test Date', _dateCtrl),
+                  _datePickerField(
+                      AppLocalizations.of(context).t('dlg_lab_date_label'), _dateCtrl),
                   const SizedBox(height: 14),
-                  _field('Ordered By', _doctorCtrl, "Doctor's name"),
+                  _field(AppLocalizations.of(context).t('dlg_lab_ordered_by'),
+                      _doctorCtrl, AppLocalizations.of(context).t('dlg_lab_doctor_name_hint')),
                   const SizedBox(height: 14),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Upload Results (Optional)',
+                      Text(AppLocalizations.of(context).t('dlg_lab_upload_label'),
                           style: TextStyle(
                               fontSize: 13,
                               color: AppColors.textPrimary(context),
@@ -109,7 +113,7 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  _pickedFileName ?? 'Choose file',
+                                  _pickedFileName ?? AppLocalizations.of(context).t('dlg_lab_choose_file'),
                                   style: TextStyle(
                                     color: _pickedFileName != null
                                         ? AppColors.textPrimary(context)
@@ -143,7 +147,7 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: const Text('Add Lab Test', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      child: Text(AppLocalizations.of(context).t('dlg_lab_add_btn'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],
@@ -177,7 +181,7 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
             }
           },
           decoration: InputDecoration(
-            hintText: 'Tap to select date',
+            hintText: AppLocalizations.of(context).t('dlg_tap_to_select_date'),
             hintStyle: TextStyle(color: AppColors.textMuted(context)),
             suffixIcon: Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary(context)),
             filled: true, fillColor: AppColors.surfaceAlt(context),

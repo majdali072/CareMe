@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 class AdminSettingsScreen extends StatelessWidget {
@@ -7,6 +8,7 @@ class AdminSettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
     return Container(
       color: AppColors.background(context),
       child: Column(
@@ -22,14 +24,14 @@ class AdminSettingsScreen extends StatelessWidget {
                 end: Alignment.centerRight,
               ),
             ),
-            child: const SafeArea(
+            child: SafeArea(
               bottom: false,
               child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
+                padding: const EdgeInsets.symmetric(vertical: 18),
                 child: Center(
                   child: Text(
-                    'Settings',
-                    style: TextStyle(
+                    t.t('nav_settings'),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -57,9 +59,9 @@ class AdminSettingsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  'Logout',
-                  style: TextStyle(
+                child: Text(
+                  t.t('account_sign_out'),
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.5,

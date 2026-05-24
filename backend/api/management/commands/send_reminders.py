@@ -39,12 +39,16 @@ class Command(BaseCommand):
 
         if options['loop']:
             self.stdout.write('Starting reminder loop (Ctrl+C to stop)...')
-            while True:
-                self._check_and_send()
-                # Sleep until the next minute boundary
-                now = datetime.now()
-                sleep_seconds = 60 - now.second
-                time.sleep(sleep_seconds)
+            try:
+                while True:
+                    self._check_and_send()
+                    # Sleep until the next minute boundary
+                    now = datetime.now()
+                    sleep_seconds = 60 - now.second
+                    time.sleep(sleep_seconds)
+            except KeyboardInterrupt:
+                # Quiet, expected exit on Ctrl+C — don't dump a traceback.
+                self.stdout.write('\nStopped reminder loop.')
         else:
             self._check_and_send()
 

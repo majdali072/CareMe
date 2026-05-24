@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
 import '../services/google_calendar_service.dart';
 import '../theme/app_theme.dart';
 
 class AddScheduleDialog extends StatefulWidget {
   final void Function(Appointment) onAdd;
-  const AddScheduleDialog({super.key, required this.onAdd});
+  // Optional pre-fill (e.g. when launched from a CareAI action). Keys:
+  // title, type, location, date (YYYY-MM-DD), time (HH:MM 24h).
+  final Map<String, String>? initialFields;
+
+  const AddScheduleDialog({super.key, required this.onAdd, this.initialFields});
 
   @override
   State<AddScheduleDialog> createState() => _AddScheduleDialogState();
@@ -36,6 +41,33 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
   @override
   void initState() {
     super.initState();
+    final init = widget.initialFields;
+    if (init != null) {
+      _titleCtrl.text = init['title'] ?? '';
+      _typeCtrl.text = init['type'] ?? '';
+      _locationCtrl.text = init['location'] ?? '';
+      final dateStr = init['date'] ?? '';
+      if (dateStr.isNotEmpty) {
+        try {
+          _pickedDate = DateTime.parse(dateStr);
+          _dateCtrl.text = DateFormat('MMM d, yyyy').format(_pickedDate!);
+        } catch (_) {}
+      }
+      final timeStr = init['time'] ?? '';
+      if (timeStr.isNotEmpty) {
+        final parts = timeStr.split(':');
+        if (parts.length >= 2) {
+          final h = int.tryParse(parts[0]);
+          final m = int.tryParse(parts[1]);
+          if (h != null && m != null && h >= 0 && h < 24 && m >= 0 && m < 60) {
+            _pickedTime = TimeOfDay(hour: h, minute: m);
+            // 24h fallback format that doesn't need localizations.
+            _timeCtrl.text =
+                '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+          }
+        }
+      }
+    }
     // Check if already signed in
     _googleAccount = _googleSignIn.currentUser;
     if (_googleAccount == null) {
@@ -61,7 +93,8 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
       if (mounted) {
         setState(() => _signingIn = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Google sign-in failed: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context)
+              .t('dlg_sched_google_failed', {'error': e.toString()}))),
         );
       }
     }
@@ -131,7 +164,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
               decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1976D2), Color(0xFF0D47A1)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
               child: Row(
                 children: [
-                  const Expanded(child: Text('Add Appointment', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 17))),
+                  Expanded(child: Text(AppLocalizations.of(context).t('dlg_sched_add_title'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 17))),
                   GestureDetector(onTap: () => Navigator.pop(context), child: const Icon(Icons.close, color: Colors.white)),
                 ],
               ),
@@ -144,26 +177,30 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                     // Google Calendar sign-in section
                     _buildGoogleCalendarSection(),
                     const SizedBox(height: 14),
-                    _field('Title', _titleCtrl, 'e.g., Dr. Smith'),
+                    _field(AppLocalizations.of(context).t('dlg_sched_title_field'),
+                        _titleCtrl, AppLocalizations.of(context).t('dlg_sched_title_hint')),
                     const SizedBox(height: 14),
-                    _field('Appointment Type', _typeCtrl, 'e.g., Checkup, Follow-up'),
+                    _field(AppLocalizations.of(context).t('dlg_sched_type_field'),
+                        _typeCtrl, AppLocalizations.of(context).t('dlg_sched_type_hint')),
                     const SizedBox(height: 14),
-                    _field('Doctor/Specialist', _doctorCtrl, "Doctor's name"),
+                    _field(AppLocalizations.of(context).t('dlg_sched_doctor'),
+                        _doctorCtrl, AppLocalizations.of(context).t('dlg_sched_doctor_hint')),
                     const SizedBox(height: 14),
-                    _field('Location', _locationCtrl, 'Medical center or clinic'),
+                    _field(AppLocalizations.of(context).t('dlg_sched_location'),
+                        _locationCtrl, AppLocalizations.of(context).t('dlg_sched_location_hint')),
                     const SizedBox(height: 14),
-                    _datePickerField('Date', _dateCtrl),
+                    _datePickerField(AppLocalizations.of(context).t('dlg_sched_date'), _dateCtrl),
                     const SizedBox(height: 14),
-                    _timePickerField('Time', _timeCtrl),
+                    _timePickerField(AppLocalizations.of(context).t('dlg_sched_time'), _timeCtrl),
                     const SizedBox(height: 14),
                     if (_alertType == 'success')
-                      _alert(true, 'Appointment added & synced to Google Calendar!'),
+                      _alert(true, AppLocalizations.of(context).t('dlg_sched_alert_synced')),
                     if (_alertType == 'added_no_gcal')
-                      _alert(false, 'Appointment added locally. Sign in with Google above to sync to your calendar.'),
+                      _alert(false, AppLocalizations.of(context).t('dlg_sched_alert_no_gcal')),
                     if (_alertType == 'added_gcal_failed')
-                      _alert(false, 'Appointment added but Google Calendar sync failed.'),
+                      _alert(false, AppLocalizations.of(context).t('dlg_sched_alert_gcal_failed')),
                     if (_alertType == 'conflict')
-                      _alert(false, 'Warning: Time conflict detected with another appointment.'),
+                      _alert(false, AppLocalizations.of(context).t('dlg_sched_alert_conflict')),
                     const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
@@ -177,7 +214,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                         ),
                         child: _submitting
                             ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Text('Add Appointment', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                            : Text(AppLocalizations.of(context).t('dlg_sched_add_button'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],
@@ -207,8 +244,8 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Google Calendar connected',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF15803D))),
+                  Text(AppLocalizations.of(context).t('dlg_sched_google_connected'),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF15803D))),
                   Text(_googleAccount!.email,
                       style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
                 ],
@@ -256,9 +293,9 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Sign in with Google',
+                  Text(AppLocalizations.of(context).t('dlg_sched_google_signin'),
                       style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary(context))),
-                  Text('Sync this appointment to your Google Calendar',
+                  Text(AppLocalizations.of(context).t('dlg_sched_google_sync_sub'),
                       style: TextStyle(fontSize: 11, color: AppColors.textMuted(context))),
                 ],
               ),
@@ -313,7 +350,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
             }
           },
           decoration: InputDecoration(
-            hintText: 'Tap to select date',
+            hintText: AppLocalizations.of(context).t('dlg_tap_to_select_date'),
             hintStyle: TextStyle(color: AppColors.textMuted(context)),
             suffixIcon: Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary(context)),
             filled: true, fillColor: AppColors.surfaceAlt(context),
@@ -347,7 +384,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
             }
           },
           decoration: InputDecoration(
-            hintText: 'Tap to select time',
+            hintText: AppLocalizations.of(context).t('dlg_sched_tap_time'),
             hintStyle: TextStyle(color: AppColors.textMuted(context)),
             suffixIcon: Icon(Icons.access_time, size: 18, color: AppColors.textSecondary(context)),
             filled: true, fillColor: AppColors.surfaceAlt(context),

@@ -4,12 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
 import '../services/api_service.dart';
 import '../widgets/location_picker.dart';
 import 'otp_verification_screen.dart';
 import 'change_password_screen.dart';
 import '../theme/app_theme.dart';
+
+/// Support contact phone number, displayed in About / Help & Support and
+/// opened directly in WhatsApp when the user taps the row.
+const String _kSupportWhatsappNumber = '+96178889290';
+const String _kSupportWhatsappUrl = 'https://wa.me/96178889290';
 
 class AccountScreen extends StatefulWidget {
   final String userName;
@@ -126,12 +133,55 @@ class _AccountScreenState extends State<AccountScreen> {
   double? _longitude;
   Uint8List? _profilePhoto;
 
+  TextEditingController? _editNameCtrl;
+  TextEditingController? _editPhoneCtrl;
+  TextEditingController? _editDobCtrl;
+  SelectedLocation? _editLocation;
+
   @override
   void initState() {
     super.initState();
     _fullName = widget.userName;
     _profilePhoto = widget.profilePhoto;
     _loadProfile();
+  }
+
+  @override
+  void dispose() {
+    _disposeEditControllers();
+    super.dispose();
+  }
+
+  void _openEditProfile() {
+    _editNameCtrl?.dispose();
+    _editPhoneCtrl?.dispose();
+    _editDobCtrl?.dispose();
+    _editNameCtrl = TextEditingController(text: _fullName);
+    _editPhoneCtrl = TextEditingController(text: _localNumber());
+    _editDobCtrl = TextEditingController(text: _dateOfBirth);
+    _editLocation = _address.isEmpty
+        ? null
+        : SelectedLocation.fromParts(
+            address: _address,
+            latitude: _latitude,
+            longitude: _longitude,
+          );
+    setState(() => _showEditProfile = true);
+  }
+
+  void _disposeEditControllers() {
+    _editNameCtrl?.dispose();
+    _editPhoneCtrl?.dispose();
+    _editDobCtrl?.dispose();
+    _editNameCtrl = null;
+    _editPhoneCtrl = null;
+    _editDobCtrl = null;
+    _editLocation = null;
+  }
+
+  void _closeEditProfile() {
+    _disposeEditControllers();
+    setState(() => _showEditProfile = false);
   }
 
   Future<void> _pickProfileImage() async {
@@ -232,8 +282,8 @@ class _AccountScreenState extends State<AccountScreen> {
                                 borderRadius: BorderRadius.circular(2)),
                           ),
                           const SizedBox(height: 12),
-                          const Text('Select Country',
-                              style: TextStyle(
+                          Text(AppLocalizations.of(context).t('country_picker_title'),
+                              style: const TextStyle(
                                   fontSize: 18, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 12),
                           TextField(
@@ -250,7 +300,7 @@ class _AccountScreenState extends State<AccountScreen> {
                               });
                             },
                             decoration: InputDecoration(
-                              hintText: 'Search country...',
+                              hintText: AppLocalizations.of(context).t('country_picker_search'),
                               prefixIcon: const Icon(Icons.search,
                                   size: 20, color: Color(0xFF9CA3AF)),
                               filled: true,
@@ -355,9 +405,9 @@ class _AccountScreenState extends State<AccountScreen> {
                             onPressed: widget.onBack,
                           ),
                         ),
-                        const Center(
-                          child: Text('Account',
-                              style: TextStyle(
+                        Center(
+                          child: Text(AppLocalizations.of(context).t('account_title'),
+                              style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold)),
@@ -408,47 +458,52 @@ class _AccountScreenState extends State<AccountScreen> {
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
             child: Column(
               children: [
-                _buildSection('Personal Information', [
-                  _buildInfoRow(Icons.mail_outline, 'Email', _email),
-                  _buildInfoRow(Icons.phone_outlined, 'Phone',
-                      _phone.isEmpty ? 'Not set' : _phone),
-                  _buildInfoRow(Icons.cake_outlined, 'Date of Birth',
-                      _dateOfBirth.isEmpty ? 'Not set' : _dateOfBirth),
-                  _buildInfoRow(Icons.location_on_outlined, 'Address',
-                      _address.isEmpty ? 'Not set' : _address),
+                _buildSection(AppLocalizations.of(context).t('account_section_personal'), [
+                  _buildInfoRow(Icons.mail_outline,
+                      AppLocalizations.of(context).t('account_info_email'), _email),
+                  _buildInfoRow(Icons.phone_outlined,
+                      AppLocalizations.of(context).t('account_info_phone'),
+                      _phone.isEmpty ? AppLocalizations.of(context).t('common_not_set') : _phone),
+                  _buildInfoRow(Icons.cake_outlined,
+                      AppLocalizations.of(context).t('account_info_dob'),
+                      _dateOfBirth.isEmpty ? AppLocalizations.of(context).t('common_not_set') : _dateOfBirth),
+                  _buildInfoRow(Icons.location_on_outlined,
+                      AppLocalizations.of(context).t('account_info_address'),
+                      _address.isEmpty ? AppLocalizations.of(context).t('common_not_set') : _address),
                 ]),
                 const SizedBox(height: 14),
-                _buildSection('Settings', [
+                _buildSection(AppLocalizations.of(context).t('account_section_settings'), [
                   _buildNavRow(
                       Icons.person_outline,
                       const Color(0xFF2563EB),
-                      'Edit Profile',
-                      'Update your personal information',
-                      () => setState(() => _showEditProfile = true)),
+                      AppLocalizations.of(context).t('account_edit_profile'),
+                      AppLocalizations.of(context).t('account_edit_profile_sub'),
+                      _openEditProfile),
                   _buildNavRow(
                       Icons.lock_outline,
                       const Color(0xFFDC2626),
-                      'Security & Privacy',
-                      'Password, privacy controls',
+                      AppLocalizations.of(context).t('account_security'),
+                      AppLocalizations.of(context).t('account_security_sub'),
                       () => setState(() => _showSecurity = true)),
                   _buildThemeToggleRow(),
                 ]),
                 const SizedBox(height: 14),
-                _buildSection('Support', [
+                _buildSection(AppLocalizations.of(context).t('account_section_support'), [
                   _buildNavRow(
                       Icons.help_outline,
                       const Color(0xFF16A34A),
-                      'Help & Support',
-                      'FAQs and contact support',
+                      AppLocalizations.of(context).t('account_help_support'),
+                      AppLocalizations.of(context).t('account_help_support_sub'),
                       _showHelpSupport),
                   _buildNavRow(
                       Icons.description_outlined,
                       const Color(0xFF7C3AED),
-                      'Terms & Privacy',
-                      'View policies',
+                      AppLocalizations.of(context).t('account_terms_privacy'),
+                      AppLocalizations.of(context).t('account_terms_privacy_sub'),
                       _showTermsPrivacy),
                   _buildNavRow(Icons.info_outline, const Color(0xFF0891B2),
-                      'About CareMe', 'Version 1.0.0', _showAbout),
+                      AppLocalizations.of(context).t('account_about'),
+                      AppLocalizations.of(context).t('account_about_sub'), _showAbout),
                 ]),
                 const SizedBox(height: 20),
                 SizedBox(
@@ -456,7 +511,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   child: ElevatedButton.icon(
                     onPressed: widget.onLogout,
                     icon: const Icon(Icons.logout, size: 18),
-                    label: const Text('Sign Out'),
+                    label: Text(AppLocalizations.of(context).t('account_sign_out')),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFFEE2E2),
                       foregroundColor: const Color(0xFFDC2626),
@@ -476,16 +531,12 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Widget _buildEditProfile() {
-    final nameCtrl = TextEditingController(text: _fullName);
-    final phoneCtrl = TextEditingController(text: _localNumber());
-    final dobCtrl = TextEditingController(text: _dateOfBirth);
-    SelectedLocation? draftLocation = _address.isEmpty
-        ? null
-        : SelectedLocation.fromParts(
-            address: _address,
-            latitude: _latitude,
-            longitude: _longitude,
-          );
+    final nameCtrl = _editNameCtrl ??=
+        TextEditingController(text: _fullName);
+    final phoneCtrl = _editPhoneCtrl ??=
+        TextEditingController(text: _localNumber());
+    final dobCtrl = _editDobCtrl ??=
+        TextEditingController(text: _dateOfBirth);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 100),
@@ -508,13 +559,12 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: IconButton(
                           icon:
                               const Icon(Icons.arrow_back, color: Colors.white),
-                          onPressed: () =>
-                              setState(() => _showEditProfile = false))),
-                  const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
+                          onPressed: _closeEditProfile)),
+                  Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
-                          child: Text('Edit Profile',
-                              style: TextStyle(
+                          child: Text(AppLocalizations.of(context).t('edit_profile_title'),
+                              style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold)))),
@@ -565,30 +615,29 @@ class _AccountScreenState extends State<AccountScreen> {
                       const SizedBox(height: 8),
                       GestureDetector(
                         onTap: _pickProfileImage,
-                        child: const Text('Change profile picture',
-                            style: TextStyle(
+                        child: Text(AppLocalizations.of(context).t('edit_profile_change_picture'),
+                            style: const TextStyle(
                                 color: Color(0xFF2563EB), fontSize: 12)),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 14),
-                _buildSection('General Information', [
-                  _buildEditField('Full Name', nameCtrl),
-                  _buildInfoRow(Icons.mail_outline, 'Email', _email),
+                _buildSection(AppLocalizations.of(context).t('edit_profile_section_general'), [
+                  _buildEditField(AppLocalizations.of(context).t('edit_profile_name_label'), nameCtrl),
+                  _buildInfoRow(Icons.mail_outline,
+                      AppLocalizations.of(context).t('account_info_email'), _email),
                   _buildPhoneField(phoneCtrl),
-                  _buildDatePickerField('Date of Birth', dobCtrl),
+                  _buildDatePickerField(AppLocalizations.of(context).t('edit_profile_dob_label'), dobCtrl),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 8),
-                    child: StatefulBuilder(
-                      builder: (ctx, setLocalState) => LocationAddressField(
-                        label: 'Address',
-                        value: draftLocation,
-                        autoDetect: true,
-                        onChanged: (loc) =>
-                            setLocalState(() => draftLocation = loc),
-                      ),
+                    child: LocationAddressField(
+                      label: AppLocalizations.of(context).t('edit_profile_address_label'),
+                      value: _editLocation,
+                      autoDetect: true,
+                      onChanged: (loc) =>
+                          setState(() => _editLocation = loc),
                     ),
                   ),
                 ]),
@@ -608,32 +657,39 @@ class _AccountScreenState extends State<AccountScreen> {
                                 name: nameCtrl.text,
                                 phone: fullPhone,
                                 dateOfBirth: dobCtrl.text,
-                                address: draftLocation?.address ?? '',
-                                latitude: draftLocation?.latitude,
-                                longitude: draftLocation?.longitude,
+                                address: _editLocation?.address ?? '',
+                                latitude: _editLocation?.latitude,
+                                longitude: _editLocation?.longitude,
                               );
+                              final savedAddress = _editLocation?.address ?? '';
+                              final savedLat = _editLocation?.latitude;
+                              final savedLng = _editLocation?.longitude;
+                              final savedName = nameCtrl.text;
+                              final savedDob = dobCtrl.text;
+                              _disposeEditControllers();
                               setState(() {
-                                _fullName = nameCtrl.text;
+                                _fullName = savedName;
                                 _phone = fullPhone;
-                                _dateOfBirth = dobCtrl.text;
-                                _address = draftLocation?.address ?? '';
-                                _latitude = draftLocation?.latitude;
-                                _longitude = draftLocation?.longitude;
+                                _dateOfBirth = savedDob;
+                                _address = savedAddress;
+                                _latitude = savedLat;
+                                _longitude = savedLng;
                                 _showEditProfile = false;
                                 _isSaving = false;
                               });
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content:
-                                          Text('Profile updated successfully')),
+                                  SnackBar(
+                                      content: Text(AppLocalizations.of(context)
+                                          .t('edit_profile_saved'))),
                                 );
                               }
                             } catch (e) {
                               setState(() => _isSaving = false);
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Failed to save: $e')),
+                                  SnackBar(content: Text(AppLocalizations.of(context)
+                                      .t('edit_profile_save_failed', {'error': e.toString()}))),
                                 );
                               }
                             }
@@ -651,8 +707,8 @@ class _AccountScreenState extends State<AccountScreen> {
                             height: 22,
                             child: CircularProgressIndicator(
                                 color: Colors.white, strokeWidth: 2.5))
-                        : const Text('Save Changes',
-                            style: TextStyle(
+                        : Text(AppLocalizations.of(context).t('edit_profile_save'),
+                            style: const TextStyle(
                                 fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                 ),
@@ -664,13 +720,32 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  Future<void> _downloadMyData() async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-          child: CircularProgressIndicator(color: Color(0xFF1E3A5F))),
-    );
+  Future<void> _exportMyData() async {
+    final saved = await _exportPdf(loadingDialog: true);
+    if (saved && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).t('common_saved')),
+          backgroundColor: const Color(0xFF1E3A5F),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// Generates the PDF on the backend, lets the user pick a save location,
+  /// and returns true if the file was actually written.
+  /// Returns false on user-cancel.
+  /// Throws on backend / file errors so the caller can decide what to do.
+  Future<bool> _exportPdf({bool loadingDialog = false}) async {
+    if (loadingDialog) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(
+            child: CircularProgressIndicator(color: Color(0xFF1E3A5F))),
+      );
+    }
 
     try {
       final appointmentMaps = widget.appointments
@@ -686,49 +761,40 @@ class _AccountScreenState extends State<AccountScreen> {
 
       final bytes = await ApiService.exportData(appointmentMaps);
 
-      if (!mounted) return;
-      Navigator.of(context).pop(); // dismiss loading
+      if (loadingDialog && mounted) {
+        Navigator.of(context).pop(); // dismiss loading
+      }
+      if (!mounted) return false;
 
-      // Let the user pick where to save — native system save dialog.
       final savePath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save your health data',
-        fileName: 'CareMe_MyData.pdf',
+        dialogTitle: AppLocalizations.of(context).t('security_download_title'),
+        fileName: AppLocalizations.of(context).t('security_download_filename'),
         type: FileType.custom,
         allowedExtensions: ['pdf'],
         bytes: bytes,
       );
 
-      if (savePath == null) {
-        // User cancelled the save dialog
-        return;
-      }
+      if (savePath == null) return false;
 
-      // On Android/iOS the file_picker plugin writes bytes itself when
-      // `bytes:` is supplied. On desktop it only returns the path, so we
-      // need to write ourselves.
       if (!Platform.isAndroid && !Platform.isIOS) {
         await File(savePath).writeAsBytes(bytes);
       }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Saved to $savePath'),
-          backgroundColor: const Color(0xFF1E3A5F),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      return true;
     } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context).pop(); // dismiss loading
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to download data: $e'),
-          backgroundColor: const Color(0xFFDC2626),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (loadingDialog && mounted) {
+        Navigator.of(context).pop();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)
+                .t('security_download_failed', {'error': e.toString()})),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      rethrow;
     }
   }
 
@@ -752,8 +818,8 @@ class _AccountScreenState extends State<AccountScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Terms & Privacy',
-                      style: TextStyle(
+                  Text(AppLocalizations.of(context).t('terms_privacy_title'),
+                      style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
                           color: Colors.white)),
@@ -769,9 +835,11 @@ class _AccountScreenState extends State<AccountScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _termsBlock('Terms of Service', _termsText),
+                    _termsBlock(AppLocalizations.of(context).t('terms_section'),
+                        AppLocalizations.of(context).t('terms_text_full')),
                     const SizedBox(height: 16),
-                    _termsBlock('Privacy Policy', _privacyText),
+                    _termsBlock(AppLocalizations.of(context).t('privacy_section'),
+                        AppLocalizations.of(context).t('privacy_text_full')),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -784,7 +852,7 @@ class _AccountScreenState extends State<AccountScreen> {
                               borderRadius: BorderRadius.circular(12)),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
-                        child: const Text('Close'),
+                        child: Text(AppLocalizations.of(context).t('common_close')),
                       ),
                     ),
                   ],
@@ -829,6 +897,18 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
+  /// Open WhatsApp directly to the support number. Falls back to a snackbar
+  /// when the device has no app that can handle the URL.
+  Future<void> _openSupportWhatsapp() async {
+    final uri = Uri.parse(_kSupportWhatsappUrl);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_kSupportWhatsappNumber)),
+      );
+    }
+  }
+
   void _showHelpSupport() {
     showDialog(
       context: context,
@@ -849,8 +929,8 @@ class _AccountScreenState extends State<AccountScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Help & Support',
-                      style: TextStyle(
+                  Text(AppLocalizations.of(context).t('account_help_support'),
+                      style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
                           color: Colors.white)),
@@ -866,49 +946,52 @@ class _AccountScreenState extends State<AccountScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Frequently Asked Questions',
+                    Text(AppLocalizations.of(context).t('help_faq_title'),
                         style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
                             color: AppColors.textPrimary(context))),
                     const SizedBox(height: 12),
-                    _faqItem('How do I add a medication?',
-                        'Go to the Medications tab and tap the + button. Fill in the medication details and tap Save.'),
-                    _faqItem('How do I upload lab results?',
-                        'Go to the Lab Tests tab and tap the + button. You can upload a file or enter the details manually.'),
-                    _faqItem('Is my health data secure?',
-                        'Yes. Your data is encrypted in transit and at rest. We never sell or share your personal health information.'),
-                    _faqItem('How do I change my password?',
-                        'Go to Settings > Security & Privacy > Change Password. You will need to verify your identity via email OTP first.'),
-                    _faqItem('How do I deactivate my account?',
-                        'Go to Settings > Security & Privacy > Deactivate Account. Your data is preserved and you can contact support to reactivate anytime.'),
-                    _faqItem('Can I export my data?',
-                        'Yes. Go to Settings > Security & Privacy > Download My Data to export your health records as a PDF.'),
+                    _faqItem(AppLocalizations.of(context).t('help_q1'),
+                        AppLocalizations.of(context).t('help_a1')),
+                    _faqItem(AppLocalizations.of(context).t('help_q2'),
+                        AppLocalizations.of(context).t('help_a2')),
+                    _faqItem(AppLocalizations.of(context).t('help_q3'),
+                        AppLocalizations.of(context).t('help_a3')),
+                    _faqItem(AppLocalizations.of(context).t('help_q4'),
+                        AppLocalizations.of(context).t('help_a4')),
+                    _faqItem(AppLocalizations.of(context).t('help_q5'),
+                        AppLocalizations.of(context).t('help_a5')),
+                    _faqItem(AppLocalizations.of(context).t('help_q6'),
+                        AppLocalizations.of(context).t('help_a6')),
                     Divider(height: 32, color: AppColors.border(context)),
-                    Text('Contact Support',
+                    Text(AppLocalizations.of(context).t('help_contact_title'),
                         style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
                             color: AppColors.textPrimary(context))),
                     const SizedBox(height: 12),
                     ListTile(
-                      leading: const Icon(Icons.email_outlined,
-                          color: Color(0xFF2563EB)),
-                      title: Text('Email',
+                      leading: const Icon(Icons.chat,
+                          color: Color(0xFF25D366)),
+                      title: Text(AppLocalizations.of(context).t('help_contact_whatsapp_label'),
                           style: TextStyle(
                               fontWeight: FontWeight.w500,
                               fontSize: 14,
                               color: AppColors.textPrimary(context))),
-                      subtitle: Text('support@careme.app',
+                      subtitle: Text(_kSupportWhatsappNumber,
                           style: TextStyle(
                               fontSize: 13,
                               color: AppColors.textSecondary(context))),
+                      trailing: Icon(Icons.open_in_new,
+                          size: 16, color: AppColors.textMuted(context)),
+                      onTap: _openSupportWhatsapp,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                     ),
                     Divider(height: 32, color: AppColors.border(context)),
                     Text(
-                      'Our support team typically responds within 24 hours.',
+                      AppLocalizations.of(context).t('help_response_time'),
                       style: TextStyle(
                           fontSize: 12, color: AppColors.textMuted(context)),
                     ),
@@ -942,89 +1025,6 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  static const String _termsText = '''Last updated: April 2026
-
-1. Acceptance of Terms
-By creating an account or otherwise using CareMe ("the App"), you confirm that you have read, understood, and agreed to be bound by these Terms of Service. If you do not agree, do not use the App.
-
-2. Eligibility
-You must be at least 18 years old, or use the App under the supervision of a parent or legal guardian. By using the App you represent that you meet these requirements.
-
-3. Description of Service
-CareMe is a personal health-management tool that lets you record and review your own medications, lab results, and appointments, set reminders, and chat with an AI assistant ("CareAI") for general wellness information. CareMe is provided "as is" and does not constitute medical advice, diagnosis, or treatment.
-
-4. Medical Disclaimer
-THE APP IS NOT A MEDICAL DEVICE. Information shown — including content generated by CareAI — is for informational purposes only and is not a substitute for professional medical judgment. Always consult a qualified healthcare provider before starting, changing, or stopping any treatment. In case of a medical emergency call your local emergency number immediately; do not rely on the App.
-
-5. Account & Security
-You are responsible for keeping your credentials confidential and for all activity that occurs under your account. Notify us immediately at support@careme.app if you suspect unauthorized access. We may suspend or terminate accounts that violate these Terms or applicable law.
-
-6. User Content & Accuracy
-You retain ownership of the data you enter ("User Content"). You alone are responsible for the accuracy, completeness, and legality of that data. By submitting content you grant CareMe a limited licence to store and process it solely to operate the App for you.
-
-7. Acceptable Use
-You agree not to: (a) misuse the App, attempt to disrupt our infrastructure, or reverse engineer it; (b) submit content you do not have the right to share; (c) use the App to harass, harm, or impersonate others; (d) rely on CareAI for emergency, diagnostic, or treatment decisions.
-
-8. Third-Party Services
-CareMe integrates with third-party services (e.g. Google Sign-In, Google Calendar, Google Maps, Google Generative Language API, Firebase Cloud Messaging). Your use of those services is governed by their own terms and privacy policies.
-
-9. Changes to the Service or Terms
-We may update the App or these Terms at any time. Material changes will be communicated through the App. Continued use after a change constitutes acceptance of the revised Terms.
-
-10. Disclaimers & Limitation of Liability
-TO THE MAXIMUM EXTENT PERMITTED BY LAW, CAREME AND ITS CONTRIBUTORS PROVIDE THE APP WITHOUT WARRANTIES OF ANY KIND AND ARE NOT LIABLE FOR ANY INDIRECT, INCIDENTAL, CONSEQUENTIAL, OR SPECIAL DAMAGES, INCLUDING LOSS OF DATA, ARISING FROM YOUR USE OF THE APP.
-
-11. Termination
-You may stop using the App at any time. We may suspend or terminate access where required by law or in response to misuse. You can deactivate your account from Settings → Security & Privacy.
-
-12. Governing Law
-These Terms are governed by the laws of the user\'s country of residence, except where mandatory consumer-protection rules require otherwise.
-
-13. Contact
-Questions or concerns about these Terms: support@careme.app.''';
-
-  static const String _privacyText = '''Last updated: April 2026
-
-1. Who We Are
-CareMe ("we", "us") is the operator of the CareMe mobile application. This Privacy Policy explains what information we collect about you, how we use it, and the choices you have.
-
-2. Information We Collect
-- Account information: name, email address, hashed password, date of birth, country code, phone number, and home address (with optional GPS coordinates for finding nearby providers).
-- Health information you choose to record: medications, dosages, schedules, lab tests and uploaded files, appointments.
-- Authentication data: when you sign in with Google we receive your Google profile name and email; we do not access your contacts or other Google data unless you grant calendar sync.
-- Device data: a Firebase Cloud Messaging token used to deliver reminder notifications, and basic diagnostic logs.
-- Chat content: messages you send to CareAI and any files you attach are sent to Google\'s Generative Language API to produce a response.
-
-3. How We Use Your Information
-We use your data only to provide the App\'s features: storing your records, sending medication reminders, generating personalized AI responses, and securing your account. We do not use your health data for advertising.
-
-4. Legal Basis
-We process personal data based on (a) the contract between you and us when you accept these Terms and (b) your consent for optional features such as location services, push notifications, camera, calendar sync, and AI chat.
-
-5. Data Security
-Your password is stored using a one-way hash. Sensitive health fields (medication, lab data) are encrypted at rest with a server-managed key. All traffic between the App and our servers travels over HTTPS/TLS.
-
-6. Sharing & Third Parties
-We do not sell, rent, or trade your personal information. We share data only with the service providers strictly required to run the App — for example Google (Sign-In, Maps, Calendar, Generative Language API) and Firebase (push notifications). Each provider acts as our data processor and is bound by its own commitments.
-
-7. Data Retention
-We keep your data while your account is active. If you deactivate your account, your records are retained in a disabled state in case you wish to reactivate. You may request permanent deletion at any time by emailing support@careme.app.
-
-8. Your Rights
-Depending on your jurisdiction (e.g. GDPR for the EU/EEA, CCPA for California), you may have the right to access, correct, export, restrict, or delete your personal data. Use Settings → Security & Privacy → Download My Data to export, or contact us to exercise other rights.
-
-9. Children
-CareMe is not directed to children under 13 (or the relevant local minimum age). We do not knowingly collect data from such users. If you believe a child has created an account, please contact us so we can remove it.
-
-10. Health-Information Notice
-CareMe is intended for personal recordkeeping and is not a HIPAA-covered entity. Records you store are not subject to HIPAA, but we apply commercially reasonable safeguards to protect them.
-
-11. Changes to This Policy
-We may update this policy as the App evolves. Material changes will be highlighted in-app. The "Last updated" date at the top reflects the current version.
-
-12. Contact
-Privacy questions or requests: support@careme.app.''';
-
   void _showAbout() {
     showDialog(
       context: context,
@@ -1045,8 +1045,8 @@ Privacy questions or requests: support@careme.app.''';
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('About CareMe',
-                      style: TextStyle(
+                  Text(AppLocalizations.of(context).t('about_title'),
+                      style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
                           color: Colors.white)),
@@ -1063,22 +1063,22 @@ Privacy questions or requests: support@careme.app.''';
                   // Logo
                   ClipRRect(
                     borderRadius: BorderRadius.circular(20),
-                    child: Image.asset('assets/CareMe-Logo.png',
+                    child: Image.asset('assets/CareMe_Logo.png',
                         width: 80, height: 80),
                   ),
                   const SizedBox(height: 12),
-                  Text('CareMe',
+                  Text(AppLocalizations.of(context).t('app_name'),
                       style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
                           color: AppColors.textPrimary(context))),
                   const SizedBox(height: 4),
-                  Text('Version 1.0.0',
+                  Text(AppLocalizations.of(context).t('about_version'),
                       style: TextStyle(
                           fontSize: 13, color: AppColors.textMuted(context))),
                   const SizedBox(height: 16),
                   Text(
-                    'CareMe is your personal health companion, designed to help you stay on top of your health by managing medications, tracking lab results, and organizing medical appointments — all in one place.',
+                    AppLocalizations.of(context).t('about_description'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 13,
@@ -1096,56 +1096,68 @@ Privacy questions or requests: support@careme.app.''';
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Key Features',
+                        Text(AppLocalizations.of(context).t('about_features_title'),
                             style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
                                 color: AppColors.textPrimary(context))),
                         const SizedBox(height: 10),
-                        const _FeatureRow(
+                        _FeatureRow(
                             icon: Icons.medication_outlined,
-                            color: Color(0xFF2563EB),
-                            text: 'Medication tracking & reminders'),
+                            color: const Color(0xFF2563EB),
+                            text: AppLocalizations.of(context).t('about_feature_med')),
                         const SizedBox(height: 8),
-                        const _FeatureRow(
+                        _FeatureRow(
                             icon: Icons.science_outlined,
-                            color: Color(0xFF7C3AED),
-                            text: 'Lab test records & file uploads'),
+                            color: const Color(0xFF7C3AED),
+                            text: AppLocalizations.of(context).t('about_feature_lab')),
                         const SizedBox(height: 8),
-                        const _FeatureRow(
+                        _FeatureRow(
                             icon: Icons.calendar_month_outlined,
-                            color: Color(0xFF16A34A),
-                            text: 'Appointment scheduling'),
+                            color: const Color(0xFF16A34A),
+                            text: AppLocalizations.of(context).t('about_feature_appt')),
                         const SizedBox(height: 8),
-                        const _FeatureRow(
+                        _FeatureRow(
                             icon: Icons.smart_toy_outlined,
-                            color: Color(0xFFF97316),
-                            text: 'AI-powered health assistant'),
+                            color: const Color(0xFFF97316),
+                            text: AppLocalizations.of(context).t('about_feature_ai')),
                         const SizedBox(height: 8),
-                        const _FeatureRow(
+                        _FeatureRow(
                             icon: Icons.picture_as_pdf_outlined,
-                            color: Color(0xFFDC2626),
-                            text: 'Export health data as PDF'),
+                            color: const Color(0xFFDC2626),
+                            text: AppLocalizations.of(context).t('about_feature_pdf')),
                         const SizedBox(height: 8),
-                        const _FeatureRow(
+                        _FeatureRow(
                             icon: Icons.lock_outline,
-                            color: Color(0xFF0891B2),
-                            text: 'Secure & private by design'),
+                            color: const Color(0xFF0891B2),
+                            text: AppLocalizations.of(context).t('about_feature_secure')),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Built with care for your well-being.',
+                    AppLocalizations.of(context).t('about_tagline'),
                     style: TextStyle(
                         fontSize: 12,
                         color: AppColors.textMuted(context),
                         fontStyle: FontStyle.italic),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
-                    'support@careme.app',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF2563EB)),
+                  GestureDetector(
+                    onTap: _openSupportWhatsapp,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.chat,
+                            size: 14, color: Color(0xFF25D366)),
+                        const SizedBox(width: 4),
+                        Text(
+                          _kSupportWhatsappNumber,
+                          style: const TextStyle(
+                              fontSize: 12, color: Color(0xFF25D366)),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1156,29 +1168,256 @@ Privacy questions or requests: support@careme.app.''';
     );
   }
 
+  void _showAccountClosureOptions() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.manage_accounts_outlined,
+                      color: AppColors.textPrimary(context), size: 26),
+                  const SizedBox(width: 10),
+                  Text(AppLocalizations.of(context).t('account_closure_title'),
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary(context))),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                AppLocalizations.of(context).t('account_closure_subtitle'),
+                style: TextStyle(
+                    fontSize: 13, color: AppColors.textSecondary(context)),
+              ),
+              const SizedBox(height: 14),
+              _buildClosureOption(
+                ctx,
+                icon: Icons.delete_forever_outlined,
+                color: const Color(0xFFDC2626),
+                title: AppLocalizations.of(context).t('account_delete_title'),
+                subtitle: AppLocalizations.of(context).t('account_delete_subtitle'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmDeleteAccount();
+                },
+              ),
+              _buildClosureOption(
+                ctx,
+                icon: Icons.download_done_outlined,
+                color: const Color(0xFFB45309),
+                title: AppLocalizations.of(context).t('account_delete_download_title'),
+                subtitle: AppLocalizations.of(context).t('account_delete_download_subtitle'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmDeleteAndDownload();
+                },
+              ),
+              _buildClosureOption(
+                ctx,
+                icon: Icons.shield_outlined,
+                color: const Color(0xFF2563EB),
+                title: AppLocalizations.of(context).t('security_deactivate'),
+                subtitle: AppLocalizations.of(context).t('account_deactivate_subtitle'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmDeactivateAccount();
+                },
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(AppLocalizations.of(context).t('common_cancel'),
+                      style: TextStyle(color: AppColors.textSecondary(context))),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClosureOption(
+    BuildContext ctx, {
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.border(context)),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: AppColors.textPrimary(context))),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textMuted(context))),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  size: 20, color: AppColors.textMuted(context)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteAccount() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.delete_forever_outlined,
+                color: Color(0xFFDC2626), size: 28),
+            const SizedBox(width: 10),
+            Text(AppLocalizations.of(context).t('account_delete_title'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          AppLocalizations.of(context).t('account_delete_confirm_body'),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF4B5563)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppLocalizations.of(context).t('common_cancel'),
+                style: TextStyle(color: AppColors.textSecondary(context))),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _performDeleteAccount();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(AppLocalizations.of(context).t('common_delete')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteAndDownload() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.download_done_outlined,
+                color: Color(0xFFB45309), size: 28),
+            const SizedBox(width: 10),
+            Text(AppLocalizations.of(context).t('account_delete_download_title'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          AppLocalizations.of(context).t('account_delete_download_confirm_body'),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF4B5563)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppLocalizations.of(context).t('common_cancel'),
+                style: TextStyle(color: AppColors.textSecondary(context))),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              bool exported;
+              try {
+                exported = await _exportPdf(loadingDialog: true);
+              } catch (_) {
+                return; // export already showed an error snackbar
+              }
+              if (!exported) return; // user cancelled save dialog
+              await _performDeleteAccount();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFB45309),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(AppLocalizations.of(context).t('account_export_and_delete')),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmDeactivateAccount() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded,
+            const Icon(Icons.warning_amber_rounded,
                 color: Color(0xFFDC2626), size: 28),
-            SizedBox(width: 10),
-            Text('Deactivate Account',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 10),
+            Text(AppLocalizations.of(context).t('security_deactivate_confirm_title'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
-        content: const Text(
-          'This will deactivate your account and sign you out. Your data (medications, lab tests, files) is preserved and not deleted.\n\nYou will not be able to sign in again until you contact support to reactivate your account.',
-          style: TextStyle(fontSize: 14, color: Color(0xFF4B5563)),
+        content: Text(
+          AppLocalizations.of(context).t('security_deactivate_confirm_body'),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF4B5563)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: Color(0xFF6B7280))),
+            child: Text(AppLocalizations.of(context).t('common_cancel'),
+                style: TextStyle(color: AppColors.textSecondary(context))),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -1188,14 +1427,15 @@ Privacy questions or requests: support@careme.app.''';
                 if (mounted) {
                   widget.onLogout();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Account deactivated')),
+                    SnackBar(content: Text(AppLocalizations.of(context)
+                        .t('security_deactivated_snack'))),
                   );
                 }
               } catch (e) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to deactivate account: $e')),
+                    SnackBar(content: Text(AppLocalizations.of(context)
+                        .t('security_deactivate_failed', {'error': e.toString()}))),
                   );
                 }
               }
@@ -1206,11 +1446,38 @@ Privacy questions or requests: support@careme.app.''';
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Deactivate'),
+            child: Text(AppLocalizations.of(context).t('security_deactivate_button')),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _performDeleteAccount() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFFDC2626))),
+    );
+    try {
+      await ApiService.deleteAccount();
+      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        widget.onLogout();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).t('account_deleted_snack'))),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)
+              .t('account_delete_failed', {'error': e.toString()}))),
+        );
+      }
+    }
   }
 
   Widget _buildSecurity() {
@@ -1237,11 +1504,11 @@ Privacy questions or requests: support@careme.app.''';
                               const Icon(Icons.arrow_back, color: Colors.white),
                           onPressed: () =>
                               setState(() => _showSecurity = false))),
-                  const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
+                  Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Center(
-                          child: Text('Security & Privacy',
-                              style: TextStyle(
+                          child: Text(AppLocalizations.of(context).t('security_title'),
+                              style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold)))),
@@ -1253,9 +1520,10 @@ Privacy questions or requests: support@careme.app.''';
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
             child: Column(
               children: [
-                _buildSection('Password & Authentication', [
+                _buildSection(AppLocalizations.of(context).t('security_section_password'), [
                   _buildNavRow(Icons.lock_outline, const Color(0xFFDC2626),
-                      'Change Password', 'Verify your identity first', () {
+                      AppLocalizations.of(context).t('security_change_password'),
+                      AppLocalizations.of(context).t('security_change_password_sub'), () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -1277,19 +1545,19 @@ Privacy questions or requests: support@careme.app.''';
                   }),
                 ]),
                 const SizedBox(height: 14),
-                _buildSection('Privacy Controls', [
+                _buildSection(AppLocalizations.of(context).t('security_section_privacy'), [
                   _buildNavRow(
                       Icons.storage_outlined,
                       const Color(0xFF7C3AED),
-                      'Download My Data',
-                      'Export all your information',
-                      _downloadMyData),
+                      AppLocalizations.of(context).t('security_download_data'),
+                      AppLocalizations.of(context).t('security_download_data_sub'),
+                      _exportMyData),
                   _buildNavRow(
                       Icons.shield_outlined,
                       const Color(0xFFDC2626),
-                      'Deactivate Account',
-                      'Disable account; data is preserved',
-                      _confirmDeactivateAccount),
+                      AppLocalizations.of(context).t('account_closure_title'),
+                      AppLocalizations.of(context).t('account_closure_nav_sub'),
+                      _showAccountClosureOptions),
                 ]),
               ],
             ),
@@ -1405,12 +1673,14 @@ Privacy questions or requests: support@careme.app.''';
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Dark Mode',
+                Text(AppLocalizations.of(context).t('account_dark_mode'),
                     style: TextStyle(
                         fontWeight: FontWeight.w500,
                         color: primaryTextColor,
                         fontSize: 14)),
-                Text(isDark ? 'On' : 'Off',
+                Text(isDark
+                        ? AppLocalizations.of(context).t('account_dark_on')
+                        : AppLocalizations.of(context).t('account_dark_off'),
                     style: TextStyle(fontSize: 12, color: subTextColor)),
               ],
             ),
@@ -1470,7 +1740,7 @@ Privacy questions or requests: support@careme.app.''';
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Phone Number',
+          Text(AppLocalizations.of(context).t('edit_profile_phone_label'),
               style: TextStyle(
                   fontSize: 12,
                   color: AppColors.textSecondary(context),
@@ -1519,7 +1789,7 @@ Privacy questions or requests: support@careme.app.''';
                   keyboardType: TextInputType.phone,
                   style: TextStyle(color: AppColors.textPrimary(context)),
                   decoration: InputDecoration(
-                    hintText: 'Phone number',
+                    hintText: AppLocalizations.of(context).t('edit_profile_phone_hint'),
                     hintStyle: TextStyle(color: AppColors.textMuted(context)),
                     filled: true,
                     fillColor: AppColors.surfaceAlt(context),
@@ -1612,7 +1882,7 @@ Privacy questions or requests: support@careme.app.''';
             decoration: InputDecoration(
               filled: true,
               fillColor: AppColors.surfaceAlt(context),
-              hintText: 'Tap to select date',
+              hintText: AppLocalizations.of(context).t('edit_profile_dob_hint'),
               hintStyle: TextStyle(color: AppColors.textMuted(context)),
               suffixIcon: Icon(Icons.calendar_today,
                   size: 18, color: AppColors.textSecondary(context)),

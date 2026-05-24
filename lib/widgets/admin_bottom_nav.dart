@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 class AdminBottomNav extends StatelessWidget {
@@ -9,7 +10,11 @@ class AdminBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = [['controller', 'Dashboard'], ['settings', 'Settings']];
+    final t = AppLocalizations.of(context);
+    final items = [
+      ['controller', t.t('nav_tab_dashboard')],
+      ['settings', t.t('nav_tab_settings')],
+    ];
     final icons = [Icons.dashboard_rounded, Icons.settings_rounded];
 
     return Container(

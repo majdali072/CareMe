@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../widgets/country_phone_field.dart';
 import '../widgets/location_picker.dart';
@@ -65,7 +66,8 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delete failed: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context)
+              .t('admin_delete_failed', {'error': e.toString()}))),
         );
       }
     }
@@ -110,7 +112,9 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        isDoctor ? 'Add Doctor' : 'Add Pharmacy',
+                        isDoctor
+                            ? AppLocalizations.of(context).t('admin_add_doctor')
+                            : AppLocalizations.of(context).t('admin_add_pharmacy'),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -144,32 +148,34 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _FormField(
-                          label: 'Name',
-                          hint: isDoctor ? 'Dr. John Doe' : 'Pharmacy Name',
+                          label: AppLocalizations.of(context).t('admin_name_label'),
+                          hint: isDoctor
+                              ? AppLocalizations.of(context).t('admin_name_doctor_hint')
+                              : AppLocalizations.of(context).t('admin_name_pharmacy_hint'),
                           controller: nameCtrl,
                           icon: isDoctor
                               ? Icons.person_outline_rounded
                               : Icons.local_pharmacy_outlined,
                           validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Name is required'
+                              ? AppLocalizations.of(context).t('admin_name_required')
                               : null,
                         ),
                         if (isDoctor) ...[
                           const SizedBox(height: 16),
                           _FormField(
-                            label: 'Specialty',
-                            hint: 'e.g. Cardiology, Dermatology, Pediatrics',
+                            label: AppLocalizations.of(context).t('admin_specialty_label'),
+                            hint: AppLocalizations.of(context).t('admin_specialty_hint'),
                             controller: specialtyCtrl,
                             icon: Icons.medical_services_outlined,
                             validator: (v) => (v == null || v.trim().isEmpty)
-                                ? 'Specialty is required'
+                                ? AppLocalizations.of(context).t('admin_specialty_required')
                                 : null,
                           ),
                         ],
                         const SizedBox(height: 16),
                         StatefulBuilder(
                           builder: (ctx, setLocalState) => LocationAddressField(
-                            label: 'Address',
+                            label: AppLocalizations.of(context).t('admin_address_label'),
                             value: pickedLocation,
                             onChanged: (loc) =>
                                 setLocalState(() => pickedLocation = loc),
@@ -178,8 +184,8 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                         const SizedBox(height: 16),
                         CountryPhoneField(
                           controller: phoneCtrl,
-                          label: 'Phone Number',
-                          hint: '555 123 4567',
+                          label: AppLocalizations.of(context).t('edit_profile_phone_label'),
+                          hint: AppLocalizations.of(context).t('admin_phone_hint'),
                         ),
                         const SizedBox(height: 28),
 
@@ -216,9 +222,9 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                                 if (!formKey.currentState!.validate()) return;
                                 if (pickedLocation == null) {
                                   ScaffoldMessenger.of(ctx).showSnackBar(
-                                    const SnackBar(
-                                        content: Text(
-                                            'Pick an address on the map first.')),
+                                    SnackBar(
+                                        content: Text(AppLocalizations.of(context)
+                                            .t('admin_pick_address_first'))),
                                   );
                                   return;
                                 }
@@ -247,12 +253,15 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                                 } catch (e) {
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Failed: $e')),
+                                    SnackBar(content: Text(AppLocalizations.of(context)
+                                        .t('admin_failed_prefix', {'error': e.toString()}))),
                                   );
                                 }
                               },
                               child: Text(
-                                isDoctor ? 'Add Doctor' : 'Add Pharmacy',
+                                isDoctor
+                                    ? AppLocalizations.of(context).t('admin_add_doctor')
+                                    : AppLocalizations.of(context).t('admin_add_pharmacy'),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
@@ -280,8 +289,8 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
       SnackBar(
         content: Text(
           isDoctor
-              ? 'Doctor added successfully!'
-              : 'Pharmacy added successfully!',
+              ? AppLocalizations.of(context).t('admin_doctor_added_snack')
+              : AppLocalizations.of(context).t('admin_pharmacy_added_snack'),
           style: const TextStyle(
               color: Colors.white, fontWeight: FontWeight.w500),
         ),
@@ -316,14 +325,14 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                     end: Alignment.centerRight,
                   ),
                 ),
-                child: const SafeArea(
+                child: SafeArea(
                   bottom: false,
                   child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 18),
+                    padding: const EdgeInsets.symmetric(vertical: 18),
                     child: Center(
                       child: Text(
-                        'Admin Controller',
-                        style: TextStyle(
+                        AppLocalizations.of(context).t('admin_controller_title_full'),
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
@@ -354,7 +363,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                       _showAddDialog(isDoctor: true);
                     },
                     icon: const Icon(Icons.person_add_rounded),
-                    label: const Text('Add Doctor'),
+                    label: Text(AppLocalizations.of(context).t('admin_add_doctor')),
                     backgroundColor: const Color(0xFF2563EB),
                     foregroundColor: Colors.white,
                   ),
@@ -366,7 +375,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                       _showAddDialog(isDoctor: false);
                     },
                     icon: const Icon(Icons.local_pharmacy_rounded),
-                    label: const Text('Add Pharmacy'),
+                    label: Text(AppLocalizations.of(context).t('admin_add_pharmacy')),
                     backgroundColor: const Color(0xFF2563EB),
                     foregroundColor: Colors.white,
                   ),
@@ -405,13 +414,14 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
               const Icon(Icons.error_outline,
                   size: 48, color: Color(0xFFDC2626)),
               const SizedBox(height: 12),
-              Text('Failed to load: $_loadError',
+              Text(AppLocalizations.of(context)
+                      .t('admin_failed_prefix', {'error': _loadError ?? ''}),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Color(0xFF64748B))),
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: _loadAll,
-                child: const Text('Retry'),
+                child: Text(AppLocalizations.of(context).t('common_retry_btn')),
               ),
             ],
           ),
@@ -423,9 +433,10 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 180),
         children: [
-          const _SectionLabel(label: 'DOCTORS'),
+          _SectionLabel(label: AppLocalizations.of(context).t('admin_section_doctors')),
           const SizedBox(height: 10),
-          if (_doctors.isEmpty) const _EmptyHint(text: 'No doctors yet.'),
+          if (_doctors.isEmpty)
+            _EmptyHint(text: AppLocalizations.of(context).t('admin_no_doctors_yet')),
           ..._doctors.map(
             (d) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -437,9 +448,10 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          const _SectionLabel(label: 'PHARMACIES'),
+          _SectionLabel(label: AppLocalizations.of(context).t('admin_section_pharmacies')),
           const SizedBox(height: 10),
-          if (_pharmacies.isEmpty) const _EmptyHint(text: 'No pharmacies yet.'),
+          if (_pharmacies.isEmpty)
+            _EmptyHint(text: AppLocalizations.of(context).t('admin_no_pharmacies_yet')),
           ..._pharmacies.map(
             (p) => Padding(
               padding: const EdgeInsets.only(bottom: 10),

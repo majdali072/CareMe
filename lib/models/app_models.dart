@@ -254,3 +254,44 @@ class ChatMessage {
     required this.timestamp,
   });
 }
+
+/// A single chat thread between the user and CareAI. Each time the user
+/// re-enters the chatbot screen we open a fresh session so the conversations
+/// stay separated; older sessions are still browsable from the history sheet
+/// for up to 7 days.
+class ChatSession {
+  final String id;
+  final DateTime startedAt;
+  final List<ChatMessage> messages;
+
+  ChatSession({
+    required this.id,
+    required this.startedAt,
+    required this.messages,
+  });
+
+  /// Timestamp of the most recent message (for retention + sort).
+  /// Falls back to [startedAt] when the session is empty.
+  DateTime get lastActivity {
+    if (messages.isEmpty) return startedAt;
+    return messages.last.timestamp;
+  }
+
+  /// True when no real user/AI exchange has happened yet — used so the host
+  /// can tell whether re-entering the screen should reuse the empty session
+  /// instead of creating yet another empty one.
+  bool get isEmpty =>
+      messages.where((m) => m.id != 1).isEmpty;
+
+  /// Short label for the history list. Uses the first user message as a
+  /// preview, or a fallback when nothing has been sent yet.
+  String previewTitle() {
+    final firstUser = messages.firstWhere(
+      (m) => m.isUser,
+      orElse: () => ChatMessage(id: -1, text: '', isUser: false, timestamp: startedAt),
+    );
+    final raw = firstUser.text.trim();
+    if (raw.isEmpty) return '';
+    return raw.length <= 60 ? raw : '${raw.substring(0, 57)}…';
+  }
+}

@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
+import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 
 const Map<String, List<String>> _drugInteractions = {
@@ -16,11 +19,15 @@ const Map<String, List<String>> _drugInteractions = {
 class AddMedicationDialog extends StatefulWidget {
   final List<String> currentMedications;
   final void Function(Medication) onAdd;
+  // Optional pre-fill (e.g. when launched from a CareAI action). The dialog
+  // is still a confirmation step, the user must press Save.
+  final Map<String, String>? initialFields;
 
   const AddMedicationDialog({
     super.key,
     required this.currentMedications,
     required this.onAdd,
+    this.initialFields,
   });
 
   @override
@@ -32,6 +39,18 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
   final _dosageCtrl = TextEditingController();
   final _purposeCtrl = TextEditingController();
   final _sideEffectsCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final init = widget.initialFields;
+    if (init != null) {
+      _nameCtrl.text = init['name'] ?? '';
+      _dosageCtrl.text = init['dosage'] ?? '';
+      _purposeCtrl.text = init['purpose'] ?? '';
+      _sideEffectsCtrl.text = init['sideEffects'] ?? '';
+    }
+  }
 
   List<MedScheduleEntry> _schedule = [];
   int? _expandedDay;
@@ -47,6 +66,13 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
   List<String> _interactingMeds = [];
   bool _showInteraction = false;
 
+  // AI-assisted fields (typeahead for name, button-fill for the rest).
+  List<String> _nameSuggestions = const [];
+  Timer? _nameDebounce;
+  bool _nameSuggestLoading = false;
+  bool _aiFilling = false;
+  String _lastSuggestedFor = '';
+
   static const List<String> _weekDays = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday',
     'Friday', 'Saturday', 'Sunday',
@@ -54,11 +80,75 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
 
   @override
   void dispose() {
+    _nameDebounce?.cancel();
     _nameCtrl.dispose();
     _dosageCtrl.dispose();
     _purposeCtrl.dispose();
     _sideEffectsCtrl.dispose();
     super.dispose();
+  }
+
+  void _onNameChanged(String value) {
+    _nameDebounce?.cancel();
+    final trimmed = value.trim();
+    if (trimmed.length < 2) {
+      if (_nameSuggestions.isNotEmpty || _nameSuggestLoading) {
+        setState(() {
+          _nameSuggestions = const [];
+          _nameSuggestLoading = false;
+        });
+      }
+      return;
+    }
+    _nameDebounce = Timer(const Duration(milliseconds: 350), () async {
+      if (!mounted) return;
+      setState(() => _nameSuggestLoading = true);
+      final results = await ApiService.suggestMedicationNames(trimmed);
+      if (!mounted) return;
+      // Drop the result if the user has moved on to a different prefix.
+      if (_nameCtrl.text.trim() != trimmed) {
+        setState(() => _nameSuggestLoading = false);
+        return;
+      }
+      setState(() {
+        _nameSuggestions = results;
+        _nameSuggestLoading = false;
+      });
+    });
+  }
+
+  Future<void> _runAiFill() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty || _aiFilling) return;
+    setState(() => _aiFilling = true);
+    final filled = await ApiService.suggestMedicationFields(name);
+    if (!mounted) return;
+    bool didFill = false;
+    void apply(TextEditingController c, String? value) {
+      final v = (value ?? '').trim();
+      if (v.isEmpty) return;
+      // Don't clobber whatever the user has already typed.
+      if (c.text.trim().isNotEmpty) return;
+      c.text = v;
+      didFill = true;
+    }
+
+    apply(_purposeCtrl, filled['purpose']);
+    apply(_sideEffectsCtrl, filled['sideEffects']);
+    setState(() {
+      _aiFilling = false;
+      _lastSuggestedFor = name;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(didFill
+              ? 'Suggested values filled in. Please review before saving.'
+              : 'No new suggestions. Review the existing values.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   List<String> _checkInteractions(String name) {
@@ -113,7 +203,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Select Day'),
+        title: Text(AppLocalizations.of(context).t('dlg_med_add_day')),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -141,9 +231,10 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
       _showInteraction = false;
     });
 
+    final t = AppLocalizations.of(context);
     // Validate name & dosage
     if (_nameCtrl.text.trim().isEmpty || _dosageCtrl.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Please fill in medication name and dosage.');
+      setState(() => _errorMessage = t.t('dlg_med_validation_name_dosage'));
       return;
     }
 
@@ -154,22 +245,19 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
       final hasValidSchedule =
           _schedule.isNotEmpty && _schedule.any((e) => e.times.isNotEmpty);
       if (!_isHistory && !hasValidSchedule) {
-        setState(() => _errorMessage =
-            'Add at least one day with a time in the Schedule section. '
-            'This is required for reminder notifications.');
+        setState(() => _errorMessage = t.t('dlg_med_validation_schedule'));
         return;
       }
 
       // Validate start date
       if (_startDate == null) {
-        setState(() => _errorMessage = 'Please select a start date.');
+        setState(() => _errorMessage = t.t('dlg_med_validation_start_date'));
         return;
       }
 
       // Validate end date or lifetime
       if (!_isLifetime && _endDate == null) {
-        setState(() =>
-            _errorMessage = 'Please select an end date or mark as lifetime.');
+        setState(() => _errorMessage = t.t('dlg_med_validation_end_date'));
         return;
       }
     }
@@ -252,9 +340,9 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
             ),
             child: Row(
               children: [
-                const Expanded(
-                  child: Text('Add Medication',
-                      style: TextStyle(
+                Expanded(
+                  child: Text(AppLocalizations.of(context).t('dlg_add_medication_title'),
+                      style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
                           fontSize: 17)),
@@ -274,14 +362,17 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _field('Medication Name *', _nameCtrl, 'e.g., Aspirin'),
+                  _buildNameFieldWithAi(),
                   const SizedBox(height: 12),
-                  _field('Dosage *', _dosageCtrl, 'e.g., 100mg'),
+                  _field(AppLocalizations.of(context).t('dlg_med_dosage_required_star'),
+                      _dosageCtrl, AppLocalizations.of(context).t('dlg_med_dosage_example')),
                   const SizedBox(height: 12),
-                  _field('Purpose', _purposeCtrl, 'e.g., Pain relief'),
+                  _field(AppLocalizations.of(context).t('dlg_med_purpose_label'),
+                      _purposeCtrl, AppLocalizations.of(context).t('dlg_med_purpose_placeholder')),
                   const SizedBox(height: 12),
-                  _field('Possible Side Effects', _sideEffectsCtrl,
-                      'e.g., Nausea',
+                  _field(AppLocalizations.of(context).t('meds_possible_side_effects'),
+                      _sideEffectsCtrl,
+                      AppLocalizations.of(context).t('dlg_med_side_effects_placeholder'),
                       maxLines: 2),
 
                   const SizedBox(height: 20),
@@ -289,7 +380,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                   const SizedBox(height: 12),
 
                   // ── Status (Active / History) ──
-                  Text('Status *',
+                  Text(AppLocalizations.of(context).t('dlg_med_status_label'),
                       style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
@@ -318,8 +409,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                               const SizedBox(width: 6),
                               Text(
                                   _isHistory
-                                      ? 'Reminder Schedule'
-                                      : 'Reminder Schedule *',
+                                      ? AppLocalizations.of(context).t('dlg_med_reminder_schedule')
+                                      : AppLocalizations.of(context).t('dlg_med_reminder_schedule_star'),
                                   style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 14,
@@ -345,7 +436,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                                       Icon(Icons.add,
                                           size: 14, color: AppColors.accent(context)),
                                       const SizedBox(width: 4),
-                                      Text('Add Day',
+                                      Text(AppLocalizations.of(context).t('dlg_med_add_day'),
                                           style: TextStyle(
                                               color: AppColors.accent(context),
                                               fontSize: 12,
@@ -359,8 +450,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                           const SizedBox(height: 4),
                           Text(
                             _isHistory
-                                ? 'Not needed for past medications'
-                                : 'Choose which days and times to get reminders',
+                                ? AppLocalizations.of(context).t('dlg_med_not_needed_history')
+                                : AppLocalizations.of(context).t('dlg_med_choose_days_times'),
                             style: TextStyle(
                                 fontSize: 11,
                                 color: AppColors.textMuted(context)),
@@ -389,7 +480,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      'Tap "Add Day" to set up your reminder schedule',
+                                      AppLocalizations.of(context).t('dlg_med_tap_add_day'),
                                       style: TextStyle(
                                           color: AppColors.accent(context),
                                           fontSize: 12),
@@ -423,7 +514,9 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                         children: [
                           Row(
                             children: [
-                              Text('Duration${_isPrn ? '' : ' *'}',
+                              Text(_isPrn
+                                      ? AppLocalizations.of(context).t('dlg_med_duration_label')
+                                      : AppLocalizations.of(context).t('dlg_med_duration_label_star'),
                                   style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 14,
@@ -440,7 +533,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                           const SizedBox(height: 10),
 
                           _dateTile(
-                            label: 'Start Date',
+                            label: AppLocalizations.of(context).t('dlg_med_start_date'),
                             date: _startDate,
                             onTap: () async {
                               final d = await _pickDate(_startDate);
@@ -455,7 +548,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                             child: IgnorePointer(
                               ignoring: _isLifetime,
                               child: _dateTile(
-                                label: 'End Date',
+                                label: AppLocalizations.of(context).t('dlg_med_end_date'),
                                 date: _endDate,
                                 onTap: () async {
                                   final d = await _pickDate(_endDate);
@@ -503,7 +596,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                           const Icon(Icons.all_inclusive,
                               size: 16, color: Color(0xFF2563EB)),
                           const SizedBox(width: 6),
-                          Text('Lifetime medication',
+                          Text(AppLocalizations.of(context).t('dlg_med_lifetime_medication'),
                               style: TextStyle(
                                   fontSize: 14, color: AppColors.textPrimary(context))),
                           if (_isHistory || _isPrn) ...[
@@ -520,23 +613,24 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                   const SizedBox(height: 20),
 
                   // Alerts
-                  if (_success) _alertBox(true, 'Medication added successfully!'),
+                  if (_success) _alertBox(true,
+                      AppLocalizations.of(context).t('dlg_med_added_success')),
                   if (_errorMessage != null)
                     _alertBox(false, _errorMessage!),
                   if (_showInteraction) ...[
-                    _alertBox(false,
-                        '${_nameCtrl.text} has known interactions with:'),
+                    _alertBox(false, AppLocalizations.of(context)
+                        .t('dlg_med_interactions_with', {'name': _nameCtrl.text})),
                     ..._interactingMeds.map((m) => Padding(
                           padding: const EdgeInsets.only(left: 32, bottom: 2),
                           child: Text('- $m',
                               style: const TextStyle(
                                   color: Color(0xFFB91C1C), fontSize: 13)),
                         )),
-                    const Padding(
-                      padding: EdgeInsets.only(left: 32, top: 4, bottom: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 32, top: 4, bottom: 8),
                       child: Text(
-                          'Please consult your doctor before taking this medication.',
-                          style: TextStyle(
+                          AppLocalizations.of(context).t('dlg_med_consult_doctor'),
+                          style: const TextStyle(
                               color: Color(0xFF7F1D1D),
                               fontSize: 12,
                               fontWeight: FontWeight.w500)),
@@ -557,8 +651,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: const Text('Add Medication',
-                          style: TextStyle(
+                      child: Text(AppLocalizations.of(context).t('dlg_med_add_btn'),
+                          style: const TextStyle(
                               fontSize: 15, fontWeight: FontWeight.w600)),
                     ),
                   ),
@@ -648,9 +742,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                   Divider(color: AppColors.border(context), height: 1),
                   const SizedBox(height: 10),
                   if (entry.times.isEmpty)
-                    const Text('Tap "Add Time" below',
-                        style:
-                            TextStyle(fontSize: 12, color: Color(0xFF2563EB)))
+                    Text(AppLocalizations.of(context).t('dlg_med_tap_add_time'),
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF2563EB)))
                   else
                     Wrap(
                       spacing: 8,
@@ -703,7 +796,7 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
                           Icon(Icons.add_alarm,
                               size: 14, color: AppColors.accent(context)),
                           const SizedBox(width: 4),
-                          Text('Add Time',
+                          Text(AppLocalizations.of(context).t('dlg_med_add_time'),
                               style: TextStyle(
                                   color: AppColors.accent(context),
                                   fontSize: 12,
@@ -773,14 +866,14 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Taken when needed',
+                  Text(AppLocalizations.of(context).t('dlg_med_prn_label'),
                       style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary(context))),
                   const SizedBox(height: 2),
                   Text(
-                      'No schedule or reminders. Use for as-needed meds like painkillers.',
+                      AppLocalizations.of(context).t('dlg_med_prn_sub'),
                       style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textMuted(context))),
@@ -803,8 +896,8 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
       ),
       child: Row(
         children: [
-          Expanded(child: _statusOption(label: 'Active', isHistory: false)),
-          Expanded(child: _statusOption(label: 'History', isHistory: true)),
+          Expanded(child: _statusOption(label: AppLocalizations.of(context).t('dlg_med_status_active'), isHistory: false)),
+          Expanded(child: _statusOption(label: AppLocalizations.of(context).t('dlg_med_status_history'), isHistory: true)),
         ],
       ),
     );
@@ -889,6 +982,145 @@ class _AddMedicationDialogState extends State<AddMedicationDialog> {
   }
 
   // ── Text field ────────────────────────────────────────────────────────────
+  // Medication name field + AI typeahead suggestions + "Suggest with AI"
+  // button that fills the remaining fields. The typeahead asks the backend
+  // for real medication names matching the prefix; the button asks for a
+  // typical dosage / purpose / side-effects payload for the chosen name.
+  Widget _buildNameFieldWithAi() {
+    final canFill = _nameCtrl.text.trim().isNotEmpty && !_aiFilling;
+    final hasSuggestions = _nameSuggestions.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(AppLocalizations.of(context).t('dlg_med_name_required_star'),
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textPrimary(context),
+                      fontWeight: FontWeight.w500)),
+            ),
+            if (_nameSuggestLoading)
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.accent(context)),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _nameCtrl,
+          onChanged: _onNameChanged,
+          textCapitalization: TextCapitalization.words,
+          style: TextStyle(color: AppColors.textPrimary(context)),
+          decoration: InputDecoration(
+            hintText: AppLocalizations.of(context).t('dlg_med_name_example'),
+            hintStyle: TextStyle(color: AppColors.textMuted(context)),
+            filled: true,
+            fillColor: AppColors.surfaceAlt(context),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: AppColors.border(context))),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: AppColors.border(context))),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          ),
+        ),
+        if (hasSuggestions) ...[
+          const SizedBox(height: 6),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 180),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border(context)),
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: _nameSuggestions.length,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              separatorBuilder: (_, __) => Divider(
+                  height: 1, color: AppColors.border(context)),
+              itemBuilder: (ctx, i) {
+                final n = _nameSuggestions[i];
+                return InkWell(
+                  onTap: () {
+                    _nameCtrl.text = n;
+                    _nameCtrl.selection = TextSelection.fromPosition(
+                        TextPosition(offset: n.length));
+                    setState(() => _nameSuggestions = const []);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    child: Row(
+                      children: [
+                        Icon(Icons.auto_awesome,
+                            size: 14, color: AppColors.accent(context)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(n,
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color:
+                                      AppColors.textPrimary(context))),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: canFill ? _runAiFill : null,
+            icon: _aiFilling
+                ? SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          AppColors.accent(context)),
+                    ),
+                  )
+                : Icon(Icons.auto_awesome,
+                    size: 16, color: AppColors.accent(context)),
+            label: Text(
+              _aiFilling
+                  ? 'Asking CareAI...'
+                  : (_lastSuggestedFor.isEmpty ||
+                          _lastSuggestedFor != _nameCtrl.text.trim())
+                      ? 'Suggest purpose & side-effects'
+                      : 'Re-run AI suggestions',
+              style: TextStyle(
+                  fontSize: 12, color: AppColors.accent(context)),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              side: BorderSide(color: AppColors.border(context)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _field(String label, TextEditingController ctrl, String hint,
       {int maxLines = 1}) {
     return Column(

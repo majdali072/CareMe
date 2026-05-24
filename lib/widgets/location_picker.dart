@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 class SelectedLocation {
@@ -100,7 +101,9 @@ class LocationAddressField extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    hasValue ? value!.address : 'Tap to pick a location',
+                    hasValue
+                        ? value!.address
+                        : AppLocalizations.of(context).t('loc_tap_pick'),
                     style: TextStyle(
                       fontSize: 14,
                       color: hasValue
@@ -178,7 +181,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         if (!mounted) return;
         setState(() {
           _busy = false;
-          _error = 'Location services are turned off on this device.';
+          _error = AppLocalizations.of(context).t('loc_services_off');
         });
         return;
       }
@@ -193,7 +196,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         setState(() {
           _busy = false;
           _error =
-              'Location permission denied. You can still pick a place manually.';
+              AppLocalizations.of(context).t('loc_permission_denied_manual');
         });
         return;
       }
@@ -218,7 +221,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Could not detect location: $e';
+        _error = AppLocalizations.of(context)
+            .t('loc_detect_failed', {'error': e.toString()});
       });
     }
   }
@@ -260,7 +264,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         _addressCtrl.text = result.address!;
       } else if (_addressCtrl.text.trim().isEmpty) {
         _error = result.error ??
-            'Could not resolve that pin to an address. Type it manually below.';
+            AppLocalizations.of(context).t('loc_pin_resolve_failed');
       }
       _busy = false;
     });
@@ -277,7 +281,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       if (results.isEmpty) {
         setState(() {
           _busy = false;
-          _error = 'No results for "$query".';
+          _error = AppLocalizations.of(context)
+              .t('loc_no_results_query', {'query': query});
         });
         return;
       }
@@ -293,7 +298,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     } catch (e) {
       setState(() {
         _busy = false;
-        _error = 'Search failed: $e';
+        _error = AppLocalizations.of(context)
+            .t('loc_search_failed', {'error': e.toString()});
       });
     }
   }
@@ -305,11 +311,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         latLng.longitude,
       );
       if (places.isEmpty) {
-        return const _GeocodeResult(error: 'No address found for that pin.');
+        return _GeocodeResult(
+            error: AppLocalizations.of(context).t('loc_pin_no_address'));
       }
       return _GeocodeResult(address: _formatPlacemark(places.first));
     } catch (e) {
-      return _GeocodeResult(error: 'Geocoding failed: $e');
+      return _GeocodeResult(
+          error: AppLocalizations.of(context)
+              .t('loc_geocoding_failed', {'error': e.toString()}));
     }
   }
 
@@ -335,12 +344,13 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
   void _confirm() {
     if (_pin == null) {
-      setState(() => _error = 'Drop a pin or search for an address first.');
+      setState(() =>
+          _error = AppLocalizations.of(context).t('loc_drop_pin_first'));
       return;
     }
     if (_address.isEmpty) {
-      setState(
-          () => _error = 'Type or accept an address before confirming.');
+      setState(() => _error =
+          AppLocalizations.of(context).t('loc_accept_before_confirm'));
       return;
     }
     Navigator.of(context).pop(SelectedLocation(
@@ -359,16 +369,16 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pick a location'),
+        title: Text(AppLocalizations.of(context).t('loc_pick_title')),
         backgroundColor: const Color(0xFF2563EB),
         foregroundColor: Colors.white,
         actions: [
           if (_pin != null)
             TextButton(
               onPressed: _busy ? null : _confirm,
-              child: const Text(
-                'CONFIRM',
-                style: TextStyle(
+              child: Text(
+                AppLocalizations.of(context).t('loc_confirm_caps'),
+                style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w700,
                 ),
@@ -406,7 +416,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                     textInputAction: TextInputAction.search,
                     onSubmitted: _geocode,
                     decoration: InputDecoration(
-                      hintText: 'Search address, place, city…',
+                      hintText:
+                          AppLocalizations.of(context).t('loc_search_placeholder'),
                       prefixIcon:
                           const Icon(Icons.search, color: Color(0xFF6B7280)),
                       suffixIcon: _busy
@@ -450,12 +461,12 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                             horizontal: 12, vertical: 8),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.my_location,
+                          children: [
+                            const Icon(Icons.my_location,
                                 size: 16, color: Color(0xFF2563EB)),
-                            SizedBox(width: 6),
-                            Text('Use current location',
-                                style: TextStyle(
+                            const SizedBox(width: 6),
+                            Text(AppLocalizations.of(context).t('loc_use_current'),
+                                style: const TextStyle(
                                     color: Color(0xFF2563EB),
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600)),
@@ -491,9 +502,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                         const SizedBox(height: 10),
                       ],
                       if (_pin != null) ...[
-                        const Text(
-                          'Address',
-                          style: TextStyle(
+                        Text(
+                          AppLocalizations.of(context).t('loc_address_label'),
+                          style: const TextStyle(
                               fontSize: 11, color: Color(0xFF6B7280)),
                         ),
                         const SizedBox(height: 4),
@@ -503,7 +514,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                           maxLines: 3,
                           decoration: InputDecoration(
                             hintText:
-                                'e.g., 123 Medical Plaza, Beirut, Lebanon',
+                                AppLocalizations.of(context).t('loc_search_hint'),
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
                             contentPadding: const EdgeInsets.symmetric(
@@ -535,7 +546,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                               backgroundColor: const Color(0xFF2563EB),
                               foregroundColor: Colors.white,
                             ),
-                            child: const Text('Use this location'),
+                            child: Text(AppLocalizations.of(context)
+                                .t('loc_use_this_location')),
                           ),
                         ),
                       ],

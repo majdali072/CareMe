@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
@@ -62,21 +63,22 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
   }
 
   Future<void> _downloadFile(LabTest lab) async {
+    final t = AppLocalizations.of(context);
     try {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Downloading...')),
+        SnackBar(content: Text(t.t('meds_downloading'))),
       );
       final bytes = await ApiService.downloadLabTestFile(lab.id!);
 
       if (kIsWeb) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File download not supported on web')),
+          SnackBar(content: Text(t.t('meds_download_not_supported_web'))),
         );
         return;
       }
 
       final savePath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save ${lab.fileName}',
+        dialogTitle: t.t('meds_save_dialog_title', {'filename': lab.fileName}),
         fileName: lab.fileName,
         bytes: bytes,
       );
@@ -90,14 +92,15 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
         }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Saved to $savePath')),
+            SnackBar(content: Text(t.t('meds_saved_to', {'path': savePath}))),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context)
+              .t('meds_download_failed', {'error': e.toString()}))),
         );
       }
     }
@@ -179,7 +182,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
 
                 return [
                   // Active medications
-                  Text('MEDICATIONS',
+                  Text(AppLocalizations.of(context).t('meds_section_meds'),
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -194,7 +197,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                   const SizedBox(height: 20),
 
                   // Lab Tests
-                  Text('LAB TEST RESULTS',
+                  Text(AppLocalizations.of(context).t('meds_section_labs'),
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -209,7 +212,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                   const SizedBox(height: 20),
 
                   // Medication History
-                  Text('MEDICATION HISTORY',
+                  Text(AppLocalizations.of(context).t('meds_section_history'),
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -252,8 +255,9 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       });
     }
 
+    final t = AppLocalizations.of(context);
     final subtitle = med.isPrn
-        ? 'As needed${med.dosage.isNotEmpty ? ' • ${med.dosage}' : ''}'
+        ? '${t.t('meds_as_needed')}${med.dosage.isNotEmpty ? ' • ${med.dosage}' : ''}'
         : '${med.dosage}${med.dosage.isNotEmpty && med.computedFrequency.isNotEmpty ? ' • ' : ''}${med.computedFrequency}';
 
     return GestureDetector(
@@ -319,7 +323,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                                       size: 13, color: Color(0xFF2563EB)),
                                   const SizedBox(width: 4),
                                   Text(
-                                    'Next reminder in ${_formatCountdown(diff)}',
+                                    t.t('meds_next_reminder_in', {'time': _formatCountdown(diff)}),
                                     style: const TextStyle(
                                         fontSize: 12,
                                         color: Color(0xFF2563EB),
@@ -406,16 +410,16 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                   const SizedBox(height: 12),
                   _buildDurationSection(med),
                   const SizedBox(height: 10),
-                  _expandedText('Frequency',
+                  _expandedText(t.t('meds_frequency'),
                       med.computedFrequency.isNotEmpty
                           ? med.computedFrequency
                           : '—'),
                 ],
                 const SizedBox(height: 10),
-                _expandedText('Purpose',
+                _expandedText(t.t('meds_purpose'),
                     med.purpose.isNotEmpty ? med.purpose : '—'),
                 const SizedBox(height: 10),
-                _expandedText('Possible Side Effects',
+                _expandedText(t.t('meds_possible_side_effects'),
                     med.sideEffects.isNotEmpty ? med.sideEffects : '—'),
               ],
             ],
@@ -438,7 +442,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
             const Icon(Icons.access_time,
                 size: 16, color: Color(0xFF2563EB)),
             const SizedBox(width: 8),
-            Text('Schedule',
+            Text(AppLocalizations.of(context).t('meds_schedule_label_short'),
                 style: TextStyle(
                     fontSize: 11, color: AppColors.textMuted(context))),
           ],
@@ -467,10 +471,10 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Schedule',
+            Text(AppLocalizations.of(context).t('meds_schedule_label_short'),
                 style: TextStyle(
                     fontSize: 11, color: AppColors.textMuted(context))),
-            Text('Taken when needed',
+            Text(AppLocalizations.of(context).t('meds_taken_when_needed'),
                 style: TextStyle(
                     fontSize: 14, color: AppColors.textPrimary(context))),
           ],
@@ -496,7 +500,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Schedule',
+                  Text(AppLocalizations.of(context).t('meds_schedule_label_short'),
                       style: TextStyle(fontSize: 11, color: AppColors.textMuted(context))),
                   if (!hasSchedule)
                     Text(
@@ -589,12 +593,13 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
 
   // ── Duration section ──────────────────────────────────────────────────────
   Widget _buildDurationSection(Medication med) {
+    final t = AppLocalizations.of(context);
     final isLifetime = med.isLifetime ?? false;
 
     String fromStr =
         med.startDate != null ? _formatDate(med.startDate!) : '—';
     String toStr = isLifetime
-        ? 'Lifetime'
+        ? t.t('meds_lifetime_short')
         : (med.endDate != null ? _formatDate(med.endDate!) : '—');
 
     return Container(
@@ -607,7 +612,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Duration',
+          Text(t.t('meds_duration'),
               style: TextStyle(fontSize: 11, color: AppColors.textMuted(context))),
           const SizedBox(height: 8),
           Row(
@@ -616,7 +621,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('From',
+                    Text(t.t('meds_from_short'),
                         style:
                             TextStyle(fontSize: 11, color: AppColors.textSecondary(context))),
                     const SizedBox(height: 2),
@@ -634,19 +639,19 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('To',
+                    Text(t.t('meds_to_short'),
                         style:
                             TextStyle(fontSize: 11, color: AppColors.textSecondary(context))),
                     const SizedBox(height: 2),
                     isLifetime
-                        ? const Row(
+                        ? Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Icon(Icons.all_inclusive,
+                              const Icon(Icons.all_inclusive,
                                   size: 14, color: Color(0xFF2563EB)),
-                              SizedBox(width: 4),
-                              Text('Lifetime',
-                                  style: TextStyle(
+                              const SizedBox(width: 4),
+                              Text(t.t('meds_lifetime_short'),
+                                  style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
                                       color: Color(0xFF2563EB))),
@@ -733,7 +738,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                         decoration: BoxDecoration(
                             color: AppColors.tint(context),
                             borderRadius: BorderRadius.circular(8)),
-                        child: Text('File',
+                        child: Text(AppLocalizations.of(context).t('meds_file_chip'),
                             style: TextStyle(
                                 color: AppColors.accent(context),
                                 fontSize: 11,
@@ -757,7 +762,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                 const SizedBox(height: 14),
                 Divider(color: AppColors.border(context), height: 1),
                 const SizedBox(height: 14),
-                _expandedText('Ordered by', lab.doctor),
+                _expandedText(AppLocalizations.of(context).t('meds_ordered_by'), lab.doctor),
                 const SizedBox(height: 10),
                 if (lab.hasFile)
                   GestureDetector(
@@ -789,13 +794,13 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                     decoration: BoxDecoration(
                         color: AppColors.surfaceAlt(context),
                         borderRadius: BorderRadius.circular(12)),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.description_outlined,
+                        const Icon(Icons.description_outlined,
                             color: Color(0xFF9CA3AF), size: 18),
-                        SizedBox(width: 8),
-                        Text('No file uploaded',
-                            style: TextStyle(
+                        const SizedBox(width: 8),
+                        Text(AppLocalizations.of(context).t('meds_no_file_uploaded'),
+                            style: const TextStyle(
                                 color: Color(0xFF9CA3AF), fontSize: 13)),
                       ],
                     ),

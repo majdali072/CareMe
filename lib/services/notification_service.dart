@@ -44,16 +44,31 @@ class NotificationService {
       ),
     );
 
-    // Create notification channel (Android 8+)
+    // Create notification channel (Android 8+).
+    // The flags below are what make the device wake the screen, vibrate,
+    // and play sound when locked. Importance.max + bypassDnd lifts the
+    // notification into a heads-up. Android freezes channel settings on
+    // first creation, so if you change these on an installed device the
+    // user has to clear app data or we have to ship a new channel ID.
     final androidPlugin = _localPlugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
+      // Make sure the old channel is replaced with the new flags. Android
+      // ignores attribute changes on an existing channel, so we delete it
+      // first. Existing users will still need a fresh install on the very
+      // first upgrade if they happened to have the old channel registered.
+      try {
+        await androidPlugin.deleteNotificationChannel('meds_channel');
+      } catch (_) {}
       await androidPlugin.createNotificationChannel(
         const AndroidNotificationChannel(
           'meds_channel',
           'Medication Reminders',
           description: 'Reminders to take scheduled medications',
           importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
         ),
       );
     }
@@ -109,8 +124,18 @@ class NotificationService {
           'Medication Reminders',
           channelDescription: 'Reminders to take scheduled medications',
           importance: Importance.max,
-          priority: Priority.high,
+          priority: Priority.max,
           visibility: NotificationVisibility.public,
+          // Treat as a time-critical alarm so Android shows it on the lock
+          // screen with sound and vibration even in Do Not Disturb.
+          category: AndroidNotificationCategory.alarm,
+          // Wake the screen via a full-screen intent. Requires the
+          // USE_FULL_SCREEN_INTENT manifest permission and showWhenLocked
+          // / turnScreenOn on MainActivity.
+          fullScreenIntent: true,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
         ),
         iOS: DarwinNotificationDetails(
           presentAlert: true,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
 import '../theme/app_theme.dart';
 
@@ -44,7 +45,7 @@ class _EditAppointmentDialogState extends State<EditAppointmentDialog> {
               decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1976D2), Color(0xFF0D47A1)])),
               child: Row(
                 children: [
-                  const Expanded(child: Text('Edit Appointment', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 17))),
+                  Expanded(child: Text(AppLocalizations.of(context).t('dlg_edit_appt_title'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 17))),
                   GestureDetector(onTap: () => Navigator.pop(context), child: const Icon(Icons.close, color: Colors.white)),
                 ],
               ),
@@ -54,15 +55,15 @@ class _EditAppointmentDialogState extends State<EditAppointmentDialog> {
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    _field('Title', _titleCtrl),
+                    _field(AppLocalizations.of(context).t('dlg_schedule_title_label'), _titleCtrl),
                     const SizedBox(height: 12),
-                    _field('Type', _typeCtrl),
+                    _field(AppLocalizations.of(context).t('dlg_edit_appt_type'), _typeCtrl),
                     const SizedBox(height: 12),
-                    _field('Date (day)', _dateCtrl, keyboardType: TextInputType.number),
+                    _field(AppLocalizations.of(context).t('dlg_edit_appt_date_day'), _dateCtrl, keyboardType: TextInputType.number),
                     const SizedBox(height: 12),
-                    _field('Time', _timeCtrl),
+                    _field(AppLocalizations.of(context).t('dlg_schedule_time_label'), _timeCtrl),
                     const SizedBox(height: 12),
-                    _field('Location', _locationCtrl),
+                    _field(AppLocalizations.of(context).t('dlg_schedule_location_label'), _locationCtrl),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -83,7 +84,7 @@ class _EditAppointmentDialogState extends State<EditAppointmentDialog> {
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: const Text('Save Changes', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        child: Text(AppLocalizations.of(context).t('dlg_med_save_btn'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],

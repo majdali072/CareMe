@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
+import 'l10n/app_localizations.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/medications_screen.dart';
@@ -18,10 +20,15 @@ import 'widgets/add_lab_test_dialog.dart';
 import 'widgets/add_schedule_dialog.dart';
 import 'models/app_models.dart';
 import 'services/api_service.dart';
+import 'services/locale_controller.dart';
 import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Snap the app's locale to either English or Arabic before the first
+  // build so the picked-up translations match the OS language on first run.
+  await LocaleController.instance.init();
+  debugAssertTranslationsComplete();
   runApp(const CareMeApp());
 }
 
@@ -60,13 +67,29 @@ class _CareMeAppState extends State<CareMeApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'CareMe',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: _themeMode,
-      home: AppRoot(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
+    return ValueListenableBuilder<Locale>(
+      valueListenable: LocaleController.instance.locale,
+      builder: (context, currentLocale, _) {
+        return MaterialApp(
+          title: 'CareMe',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: _themeMode,
+          locale: currentLocale,
+          supportedLocales: kSupportedLocales,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: AppRoot(
+            themeMode: _themeMode,
+            onThemeModeChanged: _setThemeMode,
+          ),
+        );
+      },
     );
   }
 }
@@ -74,7 +97,11 @@ class _CareMeAppState extends State<CareMeApp> {
 class AppRoot extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
-  const AppRoot({super.key, required this.themeMode, required this.onThemeModeChanged});
+  const AppRoot({
+    super.key,
+    required this.themeMode,
+    required this.onThemeModeChanged,
+  });
 
   @override
   State<AppRoot> createState() => _AppRootState();
@@ -171,11 +198,12 @@ class _AppRootState extends State<AppRoot> {
 
   void _navigate(String page) => setState(() => _currentPage = page);
 
-  void _openAddMedication() {
+  void _openAddMedication({Map<String, String>? initialFields}) {
     showDialog(
       context: context,
       builder: (_) => AddMedicationDialog(
         currentMedications: _medications.map((m) => m.name).toList(),
+        initialFields: initialFields,
         onAdd: (med) async {
           try {
             final saved = await ApiService.addMedication(med);
@@ -218,10 +246,227 @@ class _AppRootState extends State<AppRoot> {
     );
   }
 
-  void _openAddSchedule() {
+  /// Save a medication that CareAI emitted via a `careme-action` block.
+  /// No popup — the AI's natural-language reply is the rundown the user sees.
+  /// Failures show a snackbar so the user knows something went wrong; we
+  /// don't surface them in the chat itself.
+  Future<void> _saveMedicationFromAi(Medication med) async {
+    try {
+      final saved = await ApiService.addMedication(med);
+      if (!mounted) return;
+      setState(() => _medications.add(saved.copyWith(
+            schedule: med.schedule,
+            startDate: med.startDate,
+            endDate: med.endDate,
+            isLifetime: med.isLifetime,
+            isHistory: med.isHistory,
+            isPrn: med.isPrn,
+          )));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to add: $e')),
+      );
+    }
+  }
+
+  /// Save an appointment that CareAI emitted via a `careme-action` block.
+  /// Local-only persistence (matches how the manual flow works); the AI's
+  /// reply is the rundown.
+  void _saveAppointmentFromAi(Appointment apt) {
+    if (!mounted) return;
+    setState(() => _appointments.add(apt));
+  }
+
+  /// Resolve a name (case-insensitive) to a medication in the user's list.
+  /// Returns null when no medication matches; CareAI is supposed to only
+  /// reference meds that exist, but the user may have just deleted it.
+  Medication? _findMedicationByName(String name) {
+    final needle = name.trim().toLowerCase();
+    if (needle.isEmpty) return null;
+    for (final m in _medications) {
+      if (m.name.trim().toLowerCase() == needle) return m;
+    }
+    return null;
+  }
+
+  Future<void> _deleteMedicationFromAi(String name) async {
+    final med = _findMedicationByName(name);
+    if (med == null || med.id == null) return;
+    try {
+      await ApiService.deleteMedication(med.id!);
+      if (!mounted) return;
+      setState(() => _medications.removeWhere((m) => m.id == med.id));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete: $e')),
+      );
+    }
+  }
+
+  /// Apply a partial update from the AI to a medication. The fields map
+  /// matches the AI's `update_medication` action shape — supplied keys
+  /// overwrite the existing values, missing keys keep their old values.
+  Future<void> _updateMedicationFromAi(Map<String, dynamic> fields) async {
+    final lookupName = (fields['name'] ?? fields['originalName'] ?? '')
+        .toString()
+        .trim();
+    final existing = _findMedicationByName(lookupName);
+    if (existing == null || existing.id == null) return;
+
+    bool asBool(Object? v, bool fallback) {
+      if (v is bool) return v;
+      final s = (v ?? '').toString().toLowerCase().trim();
+      if (s == 'true' || s == '1' || s == 'yes') return true;
+      if (s == 'false' || s == '0' || s == 'no') return false;
+      return fallback;
+    }
+
+    DateTime? parseDate(Object? v) {
+      final s = (v ?? '').toString().trim();
+      if (s.isEmpty) return null;
+      return DateTime.tryParse(s);
+    }
+
+    List<MedScheduleEntry>? parseSchedule(Object? raw) {
+      if (raw is! List) return null;
+      final out = <MedScheduleEntry>[];
+      for (final entry in raw) {
+        if (entry is! Map) continue;
+        final day = (entry['day'] ?? '').toString().trim();
+        final times = entry['times'];
+        if (day.isEmpty || times is! List) continue;
+        out.add(MedScheduleEntry(
+          day: day,
+          times: times.map((t) => t.toString()).toList(),
+        ));
+      }
+      return out.isEmpty ? null : out;
+    }
+
+    // Build the updated medication. For each key that's actually present in
+    // the AI's payload we replace the existing value; otherwise keep what
+    // was there. `copyWith` only takes non-null overrides, so we feed it
+    // explicit values.
+    final updated = existing.copyWith(
+      name: fields.containsKey('newName')
+          ? (fields['newName'] ?? '').toString()
+          : existing.name,
+      dosage: fields.containsKey('dosage')
+          ? (fields['dosage'] ?? '').toString()
+          : existing.dosage,
+      frequency: fields.containsKey('frequency')
+          ? (fields['frequency'] ?? '').toString()
+          : existing.frequency,
+      purpose: fields.containsKey('purpose')
+          ? (fields['purpose'] ?? '').toString()
+          : existing.purpose,
+      sideEffects: fields.containsKey('sideEffects')
+          ? (fields['sideEffects'] ?? '').toString()
+          : existing.sideEffects,
+      schedule: fields.containsKey('schedule')
+          ? parseSchedule(fields['schedule'])
+          : existing.schedule,
+      startDate: fields.containsKey('startDate')
+          ? parseDate(fields['startDate'])
+          : existing.startDate,
+      endDate: fields.containsKey('endDate')
+          ? parseDate(fields['endDate'])
+          : existing.endDate,
+      isLifetime: fields.containsKey('lifetime')
+          ? asBool(fields['lifetime'], existing.isLifetime ?? false)
+          : existing.isLifetime,
+      isHistory: fields.containsKey('history')
+          ? asBool(fields['history'], existing.isHistory)
+          : existing.isHistory,
+      isPrn: fields.containsKey('prn')
+          ? asBool(fields['prn'], existing.isPrn)
+          : existing.isPrn,
+    );
+
+    try {
+      await ApiService.updateMedication(existing.id!, updated);
+      if (!mounted) return;
+      setState(() {
+        final i = _medications.indexWhere((m) => m.id == existing.id);
+        if (i != -1) _medications[i] = updated.copyWith(id: existing.id);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update: $e')),
+      );
+    }
+  }
+
+  /// Find an appointment matching `title` (case-insensitive contains) and
+  /// optionally a date (compared by year/month/day, ignores time).
+  int _findAppointmentIndex(String title, DateTime? date) {
+    final needle = title.trim().toLowerCase();
+    if (needle.isEmpty) return -1;
+    for (var i = 0; i < _appointments.length; i++) {
+      final apt = _appointments[i];
+      if (!apt.title.toLowerCase().contains(needle)) continue;
+      if (date != null) {
+        final f = apt.fullDate;
+        if (f == null) continue;
+        if (f.year != date.year || f.month != date.month || f.day != date.day) {
+          continue;
+        }
+      }
+      return i;
+    }
+    return -1;
+  }
+
+  void _deleteAppointmentFromAi(String title, DateTime? date) {
+    final idx = _findAppointmentIndex(title, date);
+    if (idx < 0) return;
+    if (!mounted) return;
+    setState(() => _appointments.removeAt(idx));
+  }
+
+  void _updateAppointmentFromAi(Map<String, dynamic> fields) {
+    final lookupTitle = (fields['title'] ?? '').toString();
+    final lookupDate = DateTime.tryParse((fields['date'] ?? '').toString());
+    final idx = _findAppointmentIndex(lookupTitle, lookupDate);
+    if (idx < 0) return;
+    final existing = _appointments[idx];
+
+    DateTime? newDate = lookupDate;
+    if (fields.containsKey('newDate')) {
+      newDate = DateTime.tryParse((fields['newDate'] ?? '').toString());
+    } else {
+      newDate = existing.fullDate;
+    }
+
+    final updated = existing.copyWith(
+      title: fields.containsKey('newTitle')
+          ? (fields['newTitle'] ?? '').toString()
+          : existing.title,
+      time: fields.containsKey('newTime')
+          ? (fields['newTime'] ?? '').toString()
+          : existing.time,
+      type: fields.containsKey('type')
+          ? (fields['type'] ?? '').toString()
+          : existing.type,
+      location: fields.containsKey('location')
+          ? (fields['location'] ?? '').toString()
+          : existing.location,
+      fullDate: newDate ?? existing.fullDate,
+      date: newDate?.day ?? existing.date,
+    );
+
+    if (!mounted) return;
+    setState(() => _appointments[idx] = updated);
+  }
+
+  void _openAddSchedule({Map<String, String>? initialFields}) {
     showDialog(
       context: context,
       builder: (_) => AddScheduleDialog(
+        initialFields: initialFields,
         onAdd: (apt) {
           setState(() => _appointments.add(apt));
         },
@@ -310,9 +555,28 @@ class _AppRootState extends State<AppRoot> {
       case 'calendar':
         return CalendarScreen(onBack: () => _navigate('home'), appointments: _appointments, onAppointmentsChanged: (a) => setState(() => _appointments = a));
       case 'chatbot':
-        return ChatbotScreen(onBack: () => _navigate('home'), profilePhoto: _profilePhoto);
+        return ChatbotScreen(
+          onBack: () => _navigate('home'),
+          profilePhoto: _profilePhoto,
+          onSaveMedicationFromAi: _saveMedicationFromAi,
+          onSaveAppointmentFromAi: _saveAppointmentFromAi,
+          onDeleteMedicationFromAi: _deleteMedicationFromAi,
+          onUpdateMedicationFromAi: _updateMedicationFromAi,
+          onDeleteAppointmentFromAi: _deleteAppointmentFromAi,
+          onUpdateAppointmentFromAi: _updateAppointmentFromAi,
+        );
       case 'account':
-        return AccountScreen(userName: _userName, onLogout: _handleLogout, onBack: () => _navigate('home'), appointments: _appointments, profilePhoto: _profilePhoto, onProfilePhotoChanged: (bytes) => setState(() => _profilePhoto = bytes), themeMode: widget.themeMode, onThemeModeChanged: widget.onThemeModeChanged);
+        return AccountScreen(
+          userName: _userName,
+          onLogout: _handleLogout,
+          onBack: () => _navigate('home'),
+          appointments: _appointments,
+          profilePhoto: _profilePhoto,
+          onProfilePhotoChanged: (bytes) =>
+              setState(() => _profilePhoto = bytes),
+          themeMode: widget.themeMode,
+          onThemeModeChanged: widget.onThemeModeChanged,
+        );
       default:
         return HomeScreen(userName: _userName, onNavigate: _navigate, medications: _medications, appointments: _appointments, labTests: _labTests, profilePhoto: _profilePhoto);
     }
@@ -351,9 +615,9 @@ class _AppRootState extends State<AppRoot> {
           child: BottomNav(currentPage: _currentPage, onNavigate: _navigate),
         ),
         if (_currentPage != 'chatbot' && _currentPage != 'account')
-          Positioned(
+          PositionedDirectional(
             bottom: 96 + bottomInset,
-            right: 16,
+            end: 16,
             child: FloatingButtons(
               currentPage: _currentPage,
               onAddMedication: _openAddMedication,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 /// Shared country list used by phone inputs across the app.
@@ -181,9 +182,9 @@ class _CountryPhoneFieldState extends State<CountryPhoneField> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          const Text(
-                            'Select Country',
-                            style: TextStyle(
+                          Text(
+                            AppLocalizations.of(context).t('country_picker_title'),
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
@@ -202,7 +203,7 @@ class _CountryPhoneFieldState extends State<CountryPhoneField> {
                               });
                             },
                             decoration: InputDecoration(
-                              hintText: 'Search country...',
+                              hintText: AppLocalizations.of(context).t('country_picker_search'),
                               prefixIcon: const Icon(Icons.search,
                                   size: 20, color: Color(0xFF9CA3AF)),
                               filled: true,
@@ -328,10 +329,13 @@ class _CountryPhoneFieldState extends State<CountryPhoneField> {
                 controller: widget.controller.numberController,
                 keyboardType: TextInputType.phone,
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Phone is required' : null,
+                    (v == null || v.trim().isEmpty)
+                        ? AppLocalizations.of(context).t('phone_required')
+                        : null,
                 style: const TextStyle(fontSize: 14, color: Color(0xFF1E293B)),
                 decoration: InputDecoration(
-                  hintText: widget.hint ?? 'Phone number',
+                  hintText: widget.hint ??
+                      AppLocalizations.of(context).t('edit_profile_phone_hint'),
                   hintStyle: const TextStyle(
                       color: Color(0xFFCBD5E1), fontSize: 14),
                   filled: true,

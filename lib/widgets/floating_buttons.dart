@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 class FloatingButtons extends StatefulWidget {
@@ -45,20 +46,24 @@ class _FloatingButtonsState extends State<FloatingButtons> with SingleTickerProv
   }
 
   List<_AddOption> _getOptions() {
+    final t = AppLocalizations.of(context);
+    final medLabel = t.t('fab_label_medication');
+    final labLabel = t.t('fab_label_lab_test');
+    final apptLabel = t.t('fab_label_appointment');
     switch (widget.currentPage) {
       case 'home':
         return [
-          _AddOption('Medication', Icons.medication, widget.onAddMedication),
-          _AddOption('Lab Test', Icons.description_outlined, widget.onAddLabTest),
-          _AddOption('Appointment', Icons.calendar_today, widget.onAddSchedule),
+          _AddOption(medLabel, Icons.medication, widget.onAddMedication),
+          _AddOption(labLabel, Icons.description_outlined, widget.onAddLabTest),
+          _AddOption(apptLabel, Icons.calendar_today, widget.onAddSchedule),
         ];
       case 'medications':
         return [
-          _AddOption('Medication', Icons.medication, widget.onAddMedication),
-          _AddOption('Lab Test', Icons.description_outlined, widget.onAddLabTest),
+          _AddOption(medLabel, Icons.medication, widget.onAddMedication),
+          _AddOption(labLabel, Icons.description_outlined, widget.onAddLabTest),
         ];
       case 'calendar':
-        return [_AddOption('Appointment', Icons.calendar_today, widget.onAddSchedule)];
+        return [_AddOption(apptLabel, Icons.calendar_today, widget.onAddSchedule)];
       default:
         return [];
     }

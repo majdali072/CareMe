@@ -56,3 +56,16 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
+
+// After a release build, drop a CareMe.apk copy next to the original so
+// `flutter build apk --release` always emits build/app/outputs/flutter-apk/CareMe.apk.
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        val gradleApk = file("${layout.buildDirectory.get()}/outputs/apk/release/app-release.apk")
+        if (!gradleApk.exists()) return@doLast
+        gradleApk.copyTo(File(gradleApk.parentFile, "CareMe.apk"), overwrite = true)
+        val flutterApkDir = file("${rootProject.projectDir}/../build/app/outputs/flutter-apk")
+        flutterApkDir.mkdirs()
+        gradleApk.copyTo(File(flutterApkDir, "CareMe.apk"), overwrite = true)
+    }
+}

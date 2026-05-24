@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 
@@ -9,11 +10,24 @@ class OTPVerificationScreen extends StatefulWidget {
   final String contactInfo;
   final void Function(String otp) onVerify;
 
+  /// When false (default), the screen calls `ApiService.verifyOtp` itself —
+  /// the OTP is consumed server-side before `onVerify` fires. Set this to
+  /// true when the caller will hand the code to a different endpoint that
+  /// performs the verification atomically (e.g. reactivate-account).
+  final bool skipBackendVerify;
+
+  /// Optional override for the initial OTP send. Defaults to calling
+  /// `ApiService.sendOtp(contactInfo)`. Provide this when the caller has
+  /// already issued the code through a different path.
+  final Future<void> Function()? onSendOtp;
+
   const OTPVerificationScreen({
     super.key,
     this.verificationType = 'email',
     this.contactInfo = '',
     required this.onVerify,
+    this.skipBackendVerify = false,
+    this.onSendOtp,
   });
 
   @override
@@ -24,11 +38,15 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
   final List<TextEditingController> _controllers =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
+  final List<FocusNode> _keyboardFocusNodes =
+      List.generate(6, (_) => FocusNode());
 
   String? _alertType; // "success", "error", or null
   String _errorMessage = '';
   int _resendTimer = 60;
   bool _canResend = false;
+  bool _isSending = false;
+  bool _isVerifying = false;
   Timer? _timer;
 
   @override
@@ -40,13 +58,29 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
   }
 
   Future<void> _sendOtp() async {
+    if (_isSending) return;
+    if (mounted) setState(() => _isSending = true);
     try {
-      await ApiService.sendOtp(widget.contactInfo);
-    } catch (e) {
+      if (widget.onSendOtp != null) {
+        await widget.onSendOtp!();
+      } else {
+        await ApiService.sendOtp(widget.contactInfo);
+      }
+      if (mounted) setState(() => _isSending = false);
+    } on ApiException catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Failed to send OTP: $e';
+          _errorMessage = e.message;
           _alertType = 'error';
+          _isSending = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = AppLocalizations.of(context).t('login_cant_reach_server');
+          _alertType = 'error';
+          _isSending = false;
         });
       }
     }
@@ -59,6 +93,9 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       c.dispose();
     }
     for (final f in _focusNodes) {
+      f.dispose();
+    }
+    for (final f in _keyboardFocusNodes) {
       f.dispose();
     }
     super.dispose();
@@ -125,39 +162,48 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       _controllers.map((c) => c.text).join();
 
   Future<void> _handleVerify() async {
-    final code = _otpCode;
+    if (_isVerifying) return;
+    final code = _otpCode.trim();
     if (code.length != 6) {
       setState(() {
-        _errorMessage = 'Please enter all 6 digits';
+        _errorMessage = AppLocalizations.of(context).t('otp_enter_all_digits');
         _alertType = 'error';
       });
       return;
     }
 
+    setState(() {
+      _isVerifying = true;
+      _alertType = null;
+    });
+
     try {
-      await ApiService.verifyOtp(widget.contactInfo, code);
-      if (mounted) {
-        setState(() => _alertType = 'success');
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          widget.onVerify(code);
-        });
+      if (!widget.skipBackendVerify) {
+        await ApiService.verifyOtp(widget.contactInfo, code);
       }
+      if (!mounted) return;
+      setState(() => _alertType = 'success');
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      widget.onVerify(code);
     } on ApiException catch (e) {
       if (mounted) {
         setState(() {
           _errorMessage = e.message;
           _alertType = 'error';
+          _isVerifying = false;
         });
         for (final c in _controllers) {
           c.clear();
         }
         _focusNodes[0].requestFocus();
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Connection error. Please try again.';
+          _errorMessage = AppLocalizations.of(context).t('login_cant_reach_server');
           _alertType = 'error';
+          _isVerifying = false;
         });
       }
     }
@@ -216,9 +262,9 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                         ),
                       ),
                     ),
-                    const Text(
-                      'Verification',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context).t('otp_header_title'),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
                         fontSize: 24,
@@ -280,7 +326,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
 
                           // Title
                           Text(
-                            'Enter Verification Code',
+                            AppLocalizations.of(context).t('otp_card_title'),
                             style: TextStyle(
                               color: AppColors.textPrimary(context),
                               fontSize: 20,
@@ -298,7 +344,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                                 fontSize: 14,
                               ),
                               children: [
-                                const TextSpan(text: "We've sent a 6-digit code to "),
+                                TextSpan(text: AppLocalizations.of(context).t('otp_sent_prefix')),
                                 TextSpan(
                                   text: contactLabel,
                                   style: const TextStyle(
@@ -311,7 +357,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            "Can't find it? Check your spam or junk folder.",
+                            AppLocalizations.of(context).t('otp_check_spam'),
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: AppColors.textMuted(context),
@@ -329,7 +375,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                                 height: 56,
                                 margin: const EdgeInsets.symmetric(horizontal: 3),
                                 child: KeyboardListener(
-                                  focusNode: FocusNode(),
+                                  focusNode: _keyboardFocusNodes[index],
                                   onKeyEvent: (event) => _handleKeyEvent(index, event),
                                   child: TextField(
                                     controller: _controllers[index],
@@ -394,13 +440,13 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                                 border: Border.all(color: const Color(0xFFBBF7D0)),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Row(
+                              child: Row(
                                 children: [
-                                  Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 20),
-                                  SizedBox(width: 8),
+                                  const Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 20),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    'Verification successful!',
-                                    style: TextStyle(
+                                    AppLocalizations.of(context).t('otp_success_snack'),
+                                    style: const TextStyle(
                                       color: Color(0xFF166534),
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -452,7 +498,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                                 ],
                               ),
                               child: ElevatedButton(
-                                onPressed: _handleVerify,
+                                onPressed: _isVerifying ? null : _handleVerify,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.transparent,
@@ -460,14 +506,22 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                child: const Text(
-                                  'Verify Code',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                                child: _isVerifying
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2.5),
+                                      )
+                                    : Text(
+                                        AppLocalizations.of(context).t('otp_verify_button_code'),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
                               ),
                             ),
                           ),
@@ -475,16 +529,24 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
 
                           // Resend Code
                           Text(
-                            "Didn't receive the code?",
+                            AppLocalizations.of(context).t('otp_didnt_receive'),
                             style: TextStyle(color: AppColors.textSecondary(context), fontSize: 14),
                           ),
                           const SizedBox(height: 8),
-                          if (_canResend)
+                          if (_isSending)
+                            Text(
+                              AppLocalizations.of(context).t('otp_sending_code'),
+                              style: TextStyle(
+                                color: AppColors.textSecondary(context),
+                                fontSize: 14,
+                              ),
+                            )
+                          else if (_canResend)
                             GestureDetector(
                               onTap: _handleResend,
-                              child: const Text(
-                                'Resend Code',
-                                style: TextStyle(
+                              child: Text(
+                                AppLocalizations.of(context).t('otp_resend_button'),
+                                style: const TextStyle(
                                   color: Color(0xFF1976D2),
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,
@@ -495,7 +557,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                             Text.rich(
                               TextSpan(
                                 children: [
-                                  const TextSpan(text: 'Resend available in '),
+                                  TextSpan(text: AppLocalizations.of(context).t('otp_resend_available_in')),
                                   TextSpan(
                                     text: _formatTime(_resendTimer),
                                     style: const TextStyle(
@@ -517,7 +579,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                     // Additional Info
                     const SizedBox(height: 24),
                     Text(
-                      'For security reasons, this code will expire in 10 minutes',
+                      AppLocalizations.of(context).t('otp_expires_note'),
                       style: TextStyle(color: AppColors.textSecondary(context), fontSize: 12),
                       textAlign: TextAlign.center,
                     ),

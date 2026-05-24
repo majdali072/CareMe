@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'otp_verification_screen.dart';
+import 'reactivate_account_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final void Function(String name, String email, bool isAdmin) onLogin;
@@ -54,22 +56,23 @@ class _LoginScreenState extends State<LoginScreen> {
         ? _nameCtrl.text.trim()
         : email.split('@').first;
 
+    final t = AppLocalizations.of(context);
     if (email.isEmpty || password.isEmpty) {
-      _setError('Please fill in all fields.');
+      _setError(t.t('login_fill_all_fields'));
       return;
     }
     if (!_isValidEmail(email)) {
-      _setError('Please enter a valid email address.');
+      _setError(t.t('login_invalid_email_msg'));
       return;
     }
 
     if (_isRegistering) {
       if (_passwordCtrl.text != _confirmPasswordCtrl.text) {
-        _setError("The two passwords don't match.");
+        _setError(t.t('login_pw_mismatch'));
         return;
       }
       if (!_passwordMeetsAll(password)) {
-        _setError('Your password does not meet all requirements yet.');
+        _setError(t.t('login_pw_not_meet_req'));
         return;
       }
     }
@@ -112,10 +115,12 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       }
+    } on DeactivatedAccountException catch (e) {
+      if (mounted) _showDeactivatedDialog(e);
     } on ApiException catch (e) {
       _setError(e.message);
     } catch (_) {
-      _setError("Couldn't reach the server. Check your connection and try again.");
+      _setError(AppLocalizations.of(context).t('login_cant_reach_server'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -148,15 +153,130 @@ class _LoginScreenState extends State<LoginScreen> {
           final isAdmin = result['user']['is_admin'] == true;
           widget.onLogin(userName, userEmail, isAdmin);
         }
+      } on DeactivatedAccountException catch (e) {
+        if (mounted) _showDeactivatedDialog(e);
       } on ApiException catch (e) {
         _setError(e.message);
       }
     } catch (e) {
       debugPrint('Google Sign-In Error: $e');
-      _setError("Google sign-in failed. Please try again.");
+      _setError(AppLocalizations.of(context).t('login_google_failed_try'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showDeactivatedDialog(DeactivatedAccountException e) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: AppColors.surface(context),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header with gradient + close X
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1976D2), Color(0xFF0D47A1)],
+                ),
+                borderRadius:
+                    BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      AppLocalizations.of(context).t('login_deactivated_title'),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                          color: Colors.white),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Column(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFDC2626).withValues(alpha: 0.12),
+                    ),
+                    child: const Icon(Icons.shield_outlined,
+                        color: Color(0xFFDC2626), size: 30),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    AppLocalizations.of(context).t('login_deactivated_body'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.textPrimary(context),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    AppLocalizations.of(context).t('login_deactivated_sub'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: AppColors.textSecondary(context),
+                        fontSize: 13),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ReactivateAccountScreen(
+                              email: e.email,
+                              isGoogleAccount: e.isGoogleAccount,
+                              onReactivated: widget.onLogin,
+                            ),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                          AppLocalizations.of(context).t('login_reactivate_button'),
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showTermsModal() {
@@ -171,17 +291,22 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
                 color: AppColors.surface(context),
-                border: Border(bottom: BorderSide(color: AppColors.border(context))),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border(
+                    bottom: BorderSide(color: AppColors.border(context))),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Terms & Privacy',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.textPrimary(context))),
+                  Text(AppLocalizations.of(context).t('account_terms_privacy'),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: AppColors.textPrimary(context))),
                   IconButton(
-                      icon: Icon(Icons.close, color: AppColors.textPrimary(context)),
+                      icon: Icon(Icons.close,
+                          color: AppColors.textPrimary(context)),
                       onPressed: () => Navigator.pop(ctx)),
                 ],
               ),
@@ -192,9 +317,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _termsSection('Terms of Service', _termsContent),
+                    _termsSection(AppLocalizations.of(context).t('terms_section'),
+                        AppLocalizations.of(context).t('terms_text_full')),
                     const SizedBox(height: 16),
-                    _termsSection('Privacy Policy', _privacyContent),
+                    _termsSection(AppLocalizations.of(context).t('privacy_section'),
+                        AppLocalizations.of(context).t('privacy_text_full')),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -213,7 +340,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(12)),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
-                        child: const Text('I Accept Terms & Privacy Policy'),
+                        child: Text(AppLocalizations.of(context).t('login_accept_terms_button')),
                       ),
                     ),
                   ],
@@ -240,58 +367,24 @@ class _LoginScreenState extends State<LoginScreen> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: AppColors.surfaceAlt(context),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Text(title,
-                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary(context))),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary(context))),
           ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Text(content,
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary(context))),
+                style: TextStyle(
+                    fontSize: 13, color: AppColors.textSecondary(context))),
           ),
         ],
       ),
     );
   }
-
-  static const String _termsContent = '''1. Acceptance of Terms
-By accessing and using CareMe, you accept and agree to be bound by these Terms of Service.
-
-2. Description of Service
-CareMe is a healthcare management application that helps users track medications, lab test results, and medical appointments. It is not a substitute for professional medical advice.
-
-3. User Accounts
-You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.
-
-4. Medical Disclaimer
-THE APP IS NOT A MEDICAL DEVICE AND DOES NOT PROVIDE MEDICAL ADVICE. Always seek the advice of your physician for any medical condition.
-
-5. User Responsibilities
-You agree to use the App only for lawful purposes and are solely responsible for the accuracy of your health information.
-
-6. Limitation of Liability
-IN NO EVENT SHALL CAREME BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT OF YOUR USE OF THE APP.''';
-
-  static const String _privacyContent = '''1. Information We Collect
-Personal Information: Name, email, phone, date of birth, and address. Health Information: Medication records, lab results, appointment details.
-
-2. How We Use Your Information
-To provide app functionality, send reminders, improve user experience, and ensure account security.
-
-3. Data Security
-We implement industry-standard security measures. Your data is encrypted in transit and at rest.
-
-4. Data Sharing
-We do not sell, trade, or rent your personal or health information to third parties.
-
-5. Your Privacy Rights
-You have the right to access, correct, delete, and export your personal data at any time.
-
-6. HIPAA Compliance
-This App is designed for personal use and is not a HIPAA-covered entity.
-
-Contact: support@careme.app''';
 
   @override
   Widget build(BuildContext context) {
@@ -314,7 +407,7 @@ Contact: support@careme.app''';
                   ClipRRect(
                     borderRadius: BorderRadius.circular(28),
                     child: Image.asset(
-                      'assets/CareMe-Logo.png',
+                      'assets/CareMe_Logo.png',
                       width: 180,
                       height: 180,
                     ),
@@ -339,8 +432,8 @@ Contact: support@careme.app''';
                       children: [
                         Text(
                           _isRegistering
-                              ? 'Sign up to get started'
-                              : 'Sign in to continue',
+                              ? AppLocalizations.of(context).t('login_subtitle_signup')
+                              : AppLocalizations.of(context).t('login_subtitle_signin'),
                           style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -348,21 +441,28 @@ Contact: support@careme.app''';
                         ),
                         const SizedBox(height: 20),
                         if (_isRegistering) ...[
-                          _buildTextField(_nameCtrl, 'Full Name',
-                              Icons.person_outline, 'John Doe'),
+                          _buildTextField(
+                              _nameCtrl,
+                              AppLocalizations.of(context).t('auth_full_name'),
+                              Icons.person_outline,
+                              AppLocalizations.of(context).t('login_fullname_hint')),
                           const SizedBox(height: 14),
                         ],
-                        _buildTextField(_emailCtrl, 'Email', Icons.mail_outline,
-                            'you@example.com',
+                        _buildTextField(
+                            _emailCtrl,
+                            AppLocalizations.of(context).t('auth_email'),
+                            Icons.mail_outline,
+                            AppLocalizations.of(context).t('login_email_hint'),
                             keyboardType: TextInputType.emailAddress),
                         const SizedBox(height: 14),
                         _buildPasswordField(
                             _passwordCtrl,
-                            'Password',
+                            AppLocalizations.of(context).t('auth_password'),
                             _obscurePassword,
                             () => setState(
                                 () => _obscurePassword = !_obscurePassword),
-                            onChanged: _isRegistering ? (_) => setState(() {}) : null),
+                            onChanged:
+                                _isRegistering ? (_) => setState(() {}) : null),
                         if (_isRegistering) ...[
                           _buildPasswordStrengthBar(_passwordCtrl.text),
                           const SizedBox(height: 8),
@@ -370,7 +470,7 @@ Contact: support@careme.app''';
                           const SizedBox(height: 14),
                           _buildPasswordField(
                               _confirmPasswordCtrl,
-                              'Confirm Password',
+                              AppLocalizations.of(context).t('auth_confirm_password'),
                               _obscureConfirm,
                               () => setState(
                                   () => _obscureConfirm = !_obscureConfirm)),
@@ -378,12 +478,11 @@ Contact: support@careme.app''';
                           _buildTermsRow(),
                         ],
                         if (_showTermsError)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 6),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
                             child: Text(
-                                'Please accept the Terms & Privacy Policy to continue.',
-                                style:
-                                    TextStyle(color: Colors.red, fontSize: 12)),
+                                AppLocalizations.of(context).t('login_accept_terms_error'),
+                                style: const TextStyle(color: Colors.red, fontSize: 12)),
                           ),
                         if (_errorMessage != null) ...[
                           const SizedBox(height: 14),
@@ -410,8 +509,8 @@ Contact: support@careme.app''';
                                         color: Colors.white, strokeWidth: 2.5))
                                 : Text(
                                     _isRegistering
-                                        ? 'Create Account'
-                                        : 'Sign In',
+                                        ? AppLocalizations.of(context).t('login_signup_button')
+                                        : AppLocalizations.of(context).t('login_sign_in'),
                                     style: const TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w600)),
@@ -422,14 +521,15 @@ Contact: support@careme.app''';
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
-                              onPressed: _isLoading ? null : _handleGoogleSignIn,
+                              onPressed:
+                                  _isLoading ? null : _handleGoogleSignIn,
                               icon: Image.asset(
                                 'assets/Google_Logo.webp',
                                 width: 20,
                                 height: 20,
                               ),
                               label: Text(
-                                'Sign in with Google',
+                                AppLocalizations.of(context).t('login_with_google'),
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
@@ -437,8 +537,10 @@ Contact: support@careme.app''';
                                 ),
                               ),
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                side: BorderSide(color: AppColors.border(context)),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                side: BorderSide(
+                                    color: AppColors.border(context)),
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14)),
                                 backgroundColor: AppColors.surface(context),
@@ -453,15 +555,18 @@ Contact: support@careme.app''';
                             children: [
                               Text(
                                   _isRegistering
-                                      ? 'Already have an account? '
-                                      : "Don't have an account? ",
+                                      ? AppLocalizations.of(context).t('login_have_account_space')
+                                      : AppLocalizations.of(context).t('login_no_account_space'),
                                   style: TextStyle(
-                                      color: AppColors.textSecondary(context), fontSize: 14)),
+                                      color: AppColors.textSecondary(context),
+                                      fontSize: 14)),
                               GestureDetector(
                                 onTap: () => setState(
                                     () => _isRegistering = !_isRegistering),
                                 child: Text(
-                                  _isRegistering ? 'Sign In' : 'Sign Up',
+                                  _isRegistering
+                                      ? AppLocalizations.of(context).t('login_link_signin')
+                                      : AppLocalizations.of(context).t('login_link_signup'),
                                   style: const TextStyle(
                                       color: Color(0xFF2563EB),
                                       fontWeight: FontWeight.w600,
@@ -484,16 +589,20 @@ Contact: support@careme.app''';
                                       contactInfo: _emailCtrl.text.trim(),
                                       onVerify: (otp) {
                                         Navigator.pop(context);
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Verified successfully!')),
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                              content: Text(AppLocalizations.of(context)
+                                                  .t('login_verified_snack'))),
                                         );
                                       },
                                     ),
                                   ),
                                 );
                               },
-                              child: const Text('Forgot password?',
-                                  style: TextStyle(
+                              child: Text(
+                                  AppLocalizations.of(context).t('login_forgot_password'),
+                                  style: const TextStyle(
                                       color: Color(0xFF2563EB), fontSize: 13)),
                             ),
                           ),
@@ -503,8 +612,8 @@ Contact: support@careme.app''';
                   ),
 
                   const SizedBox(height: 20),
-                  const Text('Secure • Private • HIPAA Compliant',
-                      style: TextStyle(color: Color(0xFFBFDBFE), fontSize: 13)),
+                  Text(AppLocalizations.of(context).t('login_secure_badge'),
+                      style: const TextStyle(color: Color(0xFFBFDBFE), fontSize: 13)),
                 ],
               ),
             ),
@@ -537,7 +646,8 @@ Contact: support@careme.app''';
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: TextStyle(color: AppColors.textMuted(context)),
-            prefixIcon: Icon(icon, color: AppColors.textMuted(context), size: 20),
+            prefixIcon:
+                Icon(icon, color: AppColors.textMuted(context), size: 20),
             filled: true,
             fillColor: AppColors.surfaceAlt(context),
             border: OutlineInputBorder(
@@ -554,7 +664,8 @@ Contact: support@careme.app''';
   }
 
   Widget _buildPasswordField(TextEditingController ctrl, String label,
-      bool obscure, VoidCallback toggle, {ValueChanged<String>? onChanged}) {
+      bool obscure, VoidCallback toggle,
+      {ValueChanged<String>? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -609,8 +720,7 @@ Contact: support@careme.app''';
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline,
-              color: Color(0xFFDC2626), size: 18),
+          const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -623,8 +733,7 @@ Contact: support@careme.app''';
           ),
           GestureDetector(
             onTap: () => _setError(null),
-            child: const Icon(Icons.close,
-                color: Color(0xFF991B1B), size: 16),
+            child: const Icon(Icons.close, color: Color(0xFF991B1B), size: 16),
           ),
         ],
       ),
@@ -633,14 +742,13 @@ Contact: support@careme.app''';
 
   // ── Live password requirement checklist ───────────────────────────────────
   Widget _buildPasswordChecklist(String password) {
+    final t = AppLocalizations.of(context);
     final rules = <_PwRule>[
-      _PwRule('At least 8 characters', password.length >= 8),
-      _PwRule('One uppercase letter (A-Z)',
-          password.contains(RegExp(r'[A-Z]'))),
-      _PwRule('One lowercase letter (a-z)',
-          password.contains(RegExp(r'[a-z]'))),
-      _PwRule('One number (0-9)', password.contains(RegExp(r'[0-9]'))),
-      _PwRule('One special character (!@#\$ etc.)',
+      _PwRule(t.t('login_pw_rule_length'), password.length >= 8),
+      _PwRule(t.t('login_pw_rule_upper'), password.contains(RegExp(r'[A-Z]'))),
+      _PwRule(t.t('login_pw_rule_lower'), password.contains(RegExp(r'[a-z]'))),
+      _PwRule(t.t('login_pw_rule_number'), password.contains(RegExp(r'[0-9]'))),
+      _PwRule(t.t('login_pw_rule_special'),
           password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))),
     ];
 
@@ -655,7 +763,7 @@ Contact: support@careme.app''';
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Your password needs:',
+            AppLocalizations.of(context).t('login_password_checklist_title'),
             style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -666,9 +774,7 @@ Contact: support@careme.app''';
             Row(
               children: [
                 Icon(
-                  r.met
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
+                  r.met ? Icons.check_circle : Icons.radio_button_unchecked,
                   size: 14,
                   color: r.met
                       ? const Color(0xFF16A34A)
@@ -705,7 +811,14 @@ Contact: support@careme.app''';
     if (password.contains(RegExp(r'[0-9]'))) score++;
     if (password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))) score++;
 
-    final labels = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
+    final t = AppLocalizations.of(context);
+    final labels = [
+      t.t('login_strength_very_weak'),
+      t.t('login_strength_weak'),
+      t.t('login_strength_fair'),
+      t.t('login_strength_good'),
+      t.t('login_strength_strong'),
+    ];
     final colors = [
       const Color(0xFFDC2626),
       const Color(0xFFF97316),
@@ -740,7 +853,8 @@ Contact: support@careme.app''';
           const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                fontSize: 11, color: color, fontWeight: FontWeight.w500),
           ),
         ],
       ),
@@ -767,10 +881,12 @@ Contact: support@careme.app''';
           Expanded(
             child: Wrap(
               children: [
-                Text('I accept the ', style: TextStyle(fontSize: 13, color: AppColors.textPrimary(context))),
+                Text(AppLocalizations.of(context).t('login_accept_prefix'),
+                    style: TextStyle(
+                        fontSize: 13, color: AppColors.textPrimary(context))),
                 GestureDetector(
                   onTap: _showTermsModal,
-                  child: const Text('Terms & Privacy Policy',
+                  child: Text(AppLocalizations.of(context).t('login_terms_privacy_link'),
                       style: TextStyle(
                           fontSize: 13,
                           color: Color(0xFF2563EB),
@@ -791,4 +907,3 @@ class _PwRule {
   final bool met;
   const _PwRule(this.label, this.met);
 }
-

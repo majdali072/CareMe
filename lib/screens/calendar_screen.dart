@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/app_models.dart';
 import '../services/google_calendar_service.dart';
 import '../widgets/edit_appointment_dialog.dart';
@@ -47,10 +48,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       onPressed: widget.onBack,
                     ),
                   ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
                     child: Center(
-                      child: Text('Appointments', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                      child: Text(AppLocalizations.of(context).t('cal_appointments_title'),
+                          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
                     ),
                   ),
                 ],
@@ -76,7 +78,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     .toList();
 
                 return [
-                  Text('UPCOMING APPOINTMENTS',
+                  Text(AppLocalizations.of(context).t('cal_section_upcoming'),
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -104,12 +106,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               size: 48,
                               color: AppColors.textMuted(context)),
                           const SizedBox(height: 12),
-                          Text('No upcoming appointments',
+                          Text(AppLocalizations.of(context).t('home_upcoming_empty'),
                               style: TextStyle(
                                   color: AppColors.textSecondary(context),
                                   fontSize: 15)),
                           const SizedBox(height: 4),
-                          Text('Add your next appointment!',
+                          Text(AppLocalizations.of(context).t('cal_empty_add_next'),
                               style: TextStyle(
                                   color: AppColors.textMuted(context),
                                   fontSize: 13)),
@@ -121,7 +123,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
                   const SizedBox(height: 24),
 
-                  Text('PREVIOUS APPOINTMENTS',
+                  Text(AppLocalizations.of(context).t('cal_section_previous'),
                       style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -141,13 +143,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildAptCard(int index, Appointment apt) {
+    final t = AppLocalizations.of(context);
     // Show the actual picked date in the pill.
     final String dateLabel;
     final d = apt.fullDate;
     if (d != null) {
-      dateLabel = '${_months[d.month - 1]} ${d.day}';
+      dateLabel = '${t.t(_monthAbbrKeys[d.month - 1])} ${d.day}';
     } else {
-      dateLabel = 'Day ${apt.date}';
+      dateLabel = t.t('home_day_prefix', {'date': apt.date.toString()});
     }
 
     return Container(
@@ -279,15 +282,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  static const _monthAbbrKeys = [
+    'month_abbr_jan', 'month_abbr_feb', 'month_abbr_mar', 'month_abbr_apr',
+    'month_abbr_may', 'month_abbr_jun', 'month_abbr_jul', 'month_abbr_aug',
+    'month_abbr_sep', 'month_abbr_oct', 'month_abbr_nov', 'month_abbr_dec',
   ];
 
   String _formatPastDate(Appointment apt) {
+    final t = AppLocalizations.of(context);
     final d = apt.fullDate;
-    if (d == null) return 'Day ${apt.date}';
-    return '${_months[d.month - 1]} ${d.day}, ${d.year}';
+    if (d == null) return t.t('home_day_prefix', {'date': apt.date.toString()});
+    return '${t.t(_monthAbbrKeys[d.month - 1])} ${d.day}, ${d.year}';
   }
 
   Widget _buildPreviousAptCard(int index, Appointment apt) {

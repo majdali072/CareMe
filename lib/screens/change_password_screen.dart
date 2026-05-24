@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 
@@ -17,32 +18,33 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   bool _isLoading = false;
 
   Future<void> _handleChangePassword() async {
+    final t = AppLocalizations.of(context);
     final password = _passwordCtrl.text;
     final confirm = _confirmCtrl.text;
 
     if (password.isEmpty || confirm.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all fields')),
+        SnackBar(content: Text(t.t('login_fill_all_fields'))),
       );
       return;
     }
 
     final issues = <String>[];
-    if (password.length < 8) issues.add('at least 8 characters');
-    if (!password.contains(RegExp(r'[A-Z]'))) issues.add('an uppercase letter');
-    if (!password.contains(RegExp(r'[a-z]'))) issues.add('a lowercase letter');
-    if (!password.contains(RegExp(r'[0-9]'))) issues.add('a number');
-    if (!password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))) issues.add('a special character');
+    if (password.length < 8) issues.add(t.t('cp_issue_length'));
+    if (!password.contains(RegExp(r'[A-Z]'))) issues.add(t.t('cp_issue_upper'));
+    if (!password.contains(RegExp(r'[a-z]'))) issues.add(t.t('cp_issue_lower'));
+    if (!password.contains(RegExp(r'[0-9]'))) issues.add(t.t('cp_issue_number'));
+    if (!password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))) issues.add(t.t('cp_issue_special'));
     if (issues.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Password must contain: ${issues.join(", ")}')),
+        SnackBar(content: Text(t.t('cp_password_contains_prefix', {'issues': issues.join(", ")}))),
       );
       return;
     }
 
     if (password != confirm) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match!')),
+        SnackBar(content: Text(t.t('cp_pw_mismatch_bang'))),
       );
       return;
     }
@@ -53,7 +55,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       await ApiService.changePassword(password);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Password changed successfully!')),
+          SnackBar(content: Text(t.t('cp_changed_success'))),
         );
         Navigator.pop(context);
       }
@@ -66,7 +68,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Connection error. Please try again.')),
+          SnackBar(content: Text(t.t('cp_connection_error'))),
         );
       }
     } finally {
@@ -95,7 +97,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(28),
                     child: Image.asset(
-                      'assets/CareMe-Logo.png',
+                      'assets/CareMe_Logo.png',
                       width: 180,
                       height: 180,
                     ),
@@ -120,7 +122,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Create New Password',
+                          AppLocalizations.of(context).t('cp_create_new_title'),
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -129,7 +131,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Password must contain at least 8 characters, uppercase, lowercase, number, and special character.',
+                          AppLocalizations.of(context).t('cp_requirements_note'),
                           style: TextStyle(
                             fontSize: 13,
                             color: AppColors.textMuted(context),
@@ -140,7 +142,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                         // New Password
                         _buildPasswordField(
                           _passwordCtrl,
-                          'New Password',
+                          AppLocalizations.of(context).t('cp_new'),
                           _obscurePassword,
                           () => setState(() => _obscurePassword = !_obscurePassword),
                           onChanged: (_) => setState(() {}),
@@ -151,7 +153,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                         // Confirm Password
                         _buildPasswordField(
                           _confirmCtrl,
-                          'Confirm Password',
+                          AppLocalizations.of(context).t('auth_confirm_password'),
                           _obscureConfirm,
                           () => setState(() => _obscureConfirm = !_obscureConfirm),
                         ),
@@ -180,9 +182,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                                       strokeWidth: 2.5,
                                     ),
                                   )
-                                : const Text(
-                                    'Change Password',
-                                    style: TextStyle(
+                                : Text(
+                                    AppLocalizations.of(context).t('cp_change_password_btn'),
+                                    style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -195,9 +197,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                         Center(
                           child: GestureDetector(
                             onTap: () => Navigator.pop(context),
-                            child: const Text(
-                              'Cancel',
-                              style: TextStyle(
+                            child: Text(
+                              AppLocalizations.of(context).t('common_cancel'),
+                              style: const TextStyle(
                                 color: Color(0xFF2563EB),
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
@@ -210,9 +212,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   ),
 
                   const SizedBox(height: 20),
-                  const Text(
-                    'Secure • Private • HIPAA Compliant',
-                    style: TextStyle(color: Color(0xFFBFDBFE), fontSize: 13),
+                  Text(
+                    AppLocalizations.of(context).t('login_secure_badge'),
+                    style: const TextStyle(color: Color(0xFFBFDBFE), fontSize: 13),
                   ),
                 ],
               ),
@@ -286,7 +288,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     if (password.contains(RegExp(r'[0-9]'))) score++;
     if (password.contains(RegExp(r'[!@#\$%^&*(),.?":{}|<>]'))) score++;
 
-    final labels = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
+    final t = AppLocalizations.of(context);
+    final labels = [
+      t.t('login_strength_very_weak'),
+      t.t('login_strength_weak'),
+      t.t('login_strength_fair'),
+      t.t('login_strength_good'),
+      t.t('login_strength_strong'),
+    ];
     final colors = [
       const Color(0xFFDC2626),
       const Color(0xFFF97316),

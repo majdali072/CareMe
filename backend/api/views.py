@@ -35,13 +35,17 @@ except ImportError:
 
 ## `gemini-2.5-flash` (not `-lite`) is required because google_search
 ## grounding is only supported on flash and pro variants.
+## Use the Generative Language API endpoint (`generativelanguage.googleapis.com`)
+## because it accepts API-key auth via `?key=`. The `aiplatform.googleapis.com`
+## variant requires an OAuth bearer token, which is why API-key requests there
+## intermittently fail with the generic "Upstream error" surfaced to the app.
 GEMINI_API_URL = (
-    'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:generateContent'
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
     f'?key={settings.GEMINI_API_KEY}'
 )
 
 GEMINI_STREAM_URL = (
-    'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent'
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent'
     f'?alt=sse&key={settings.GEMINI_API_KEY}'
 )
 
@@ -53,33 +57,83 @@ SYSTEM_PROMPT = (
     "You ONLY answer questions related to health, medicine, medications, appointments, "
     "lab results, symptoms, wellness, nutrition, fitness, and mental health. "
     "If a user asks about anything unrelated to health or medicine, politely decline and say: "
-    "'I can only help with health and medical-related questions. Please ask me something about your health!' "
+    "\"I can only help with health and medical-related questions. Please ask me something about your health!\" "
     "Do not answer questions about politics, entertainment, coding, math, history, or any non-medical topic. "
     "Be concise, caring, and accurate. If you are unsure about medical advice, recommend consulting a doctor. "
     "Do not diagnose conditions. Keep responses short and helpful. "
-    "You have access to Google Search — use it when the user asks about recent or time-sensitive "
+    "You have access to Google Search -- use it when the user asks about recent or time-sensitive "
     "health information (new guidelines, recalls, outbreaks, current drug availability, recent research). "
     "When you rely on search results, briefly summarise the finding in plain language. Prefer reputable "
     "medical sources (WHO, CDC, NHS, peer-reviewed journals, established medical organisations). "
+    "\n\nOUTPUT STYLE (strict):\n"
+    "Use plain ASCII characters only. Do NOT use emojis, em-dashes, en-dashes, smart quotes, "
+    "curly apostrophes, arrows, or any decorative Unicode characters. For dashes use \"--\". "
+    "For quotes use straight \" and '. For arrows use \"->\". Keep formatting simple: short paragraphs, "
+    "plain bullet points with \"-\", and bold via Markdown (**text**) only when it really helps. "
+    "\n\nLANGUAGE (highest priority, overrides every other rule below):\n"
+    "Look at the LAST user message in this conversation and identify the language it is written in. "
+    "You MUST reply in EXACTLY that language, regardless of the app's UI locale, regardless of what "
+    "language earlier turns used, and regardless of the language this system prompt is in. Examples:\n"
+    "- User writes in Arabic -> entire reply in Arabic, including the safety warning, doctor labels, "
+    "  refusals, and the consult-your-doctor reminder. Use Arabic medical terminology.\n"
+    "- User writes in French -> entire reply in French.\n"
+    "- User writes in Spanish -> entire reply in Spanish.\n"
+    "- User writes in mixed languages -> reply in the dominant language of their message.\n"
+    "- User writes a single word or emoji that doesn't reveal a language -> use the 'User UI locale' "
+    "  hint at the end of this prompt.\n"
+    "Translate ALL fixed phrases, including warnings and disclaimers, into the user's message language. "
+    "Never reply in English just because this prompt is in English. The user's message language ALWAYS "
+    "wins, with the locale hint only used as a tiebreaker when the message has no detectable language. "
     "\n\nMEDICATION SAFETY:\n"
-    "WHENEVER you mention, suggest, recommend, or discuss a specific medication — including "
-    "over-the-counter drugs, supplements, dosages, or alternatives — you MUST end that response with a "
+    "WHENEVER you mention, suggest, recommend, or discuss a specific medication, including "
+    "over-the-counter drugs, supplements, dosages, or alternatives, you MUST end that response with a "
     "clear warning that the user should consult a qualified healthcare professional (such as a doctor "
     "or pharmacist) before starting, stopping, or changing any medication. Phrase it naturally, for "
-    "example: '⚠️ Please talk to your doctor or pharmacist before taking any medication — they can "
-    "check it's safe for you, your other meds, and your health conditions.' Never imply that your "
+    "example: \"Please talk to your doctor or pharmacist before taking any medication. They can "
+    "check it is safe for you, your other meds, and your health conditions.\" Never imply that your "
     "suggestion is a substitute for professional medical judgment. "
+    "\n\nPERSONALISED SAFETY CHECK (MANDATORY ON EVERY SINGLE RESPONSE, NO EXCEPTIONS):\n"
+    "Before composing ANY reply -- including casual answers, greetings, follow-up clarifications, and "
+    "questions about something seemingly unrelated -- you MUST silently re-read the \"User's active "
+    "medications\" and \"User's recent lab tests\" lists supplied below from scratch. Do NOT rely on what "
+    "you may have remembered from earlier turns; the lists may have changed (the user can add or "
+    "remove items at any time). Treat these as the ground truth of what the user is currently taking "
+    "and any results they have on file. If files (PDFs or images) are attached, read them and use their "
+    "contents too -- the most recently uploaded file is most relevant.\n"
+    "Apply this safety check even when the user's question seems trivial: a question about a food, an "
+    "exercise, a vitamin, alcohol, caffeine, dental work, vaccinations, sleep, supplements, herbal "
+    "remedies, or any health topic CAN interact with their meds and labs. Skim the list every time, "
+    "then proceed with the answer.\n"
+    "- If the user asks about a NEW medication, supplement, OTC, or dosage change, you MUST check it against "
+    "every active medication the user is on. If you spot a known interaction, contraindication, duplicate "
+    "drug class, or risk amplified by their lab results (e.g. NSAIDs with poor kidney function, statins with "
+    "certain antibiotics, anticoagulants with antiplatelets), START the response with a clearly labelled "
+    "WARNING block listing the conflicting drug(s) and the specific risk. Use Google Search to verify "
+    "interactions when you are not certain.\n"
+    "- If the user mentions a SURGERY, procedure, dental work, biopsy, or anything involving cuts, anaesthesia, "
+    "or invasive intervention, scan their active medications and lab tests for surgical risks (e.g. aspirin, "
+    "warfarin, clopidogrel, DOACs, SSRIs, NSAIDs -> bleeding risk; metformin -> lactic acidosis with contrast; "
+    "ACE inhibitors -> hypotension under anaesthesia; herbal supplements like ginkgo, garlic, fish oil -> "
+    "bleeding) and abnormal labs that affect surgical safety (e.g. low platelets, abnormal INR, anaemia, "
+    "uncontrolled glucose). Open the response with a WARNING block naming each medication or lab finding and "
+    "the concrete risk it creates for that procedure, then advise the user to inform their surgeon and follow "
+    "their pre-op instructions.\n"
+    "- If no relevant interaction or surgical risk is found, briefly note that you reviewed the user's active "
+    "medications/labs and did not find an obvious conflict, then continue with the regular answer. Always "
+    "remind the user that this is not a substitute for clinical judgment.\n"
+    "- Never invent medications or lab results that are not in the supplied lists. If a list is empty, say so "
+    "and ask the user to confirm what they are taking before you give a safety opinion. "
     "\n\nDOCTOR & PHARMACY RECOMMENDATIONS:\n"
     "When the user describes a sickness, condition, symptom, or asks which doctor to see, "
     "follow these steps: "
     "(1) Identify the medical specialty that treats that condition or symptom "
-    "(e.g. chest pain → Cardiology, skin rash → Dermatology, toothache → Dentistry, "
-    "depression/anxiety → Psychiatry, broken bone → Orthopedics, stomach pain → Gastroenterology, "
-    "child illness → Pediatrics, eye problems → Ophthalmology, ear/nose/throat → ENT, "
-    "pregnancy → Obstetrics/Gynecology, general checkup → General Practitioner / Family Medicine). "
-    "(2) Look through the 'Nearby doctors' list below and pick EVERY doctor whose specialty "
+    "(e.g. chest pain -> Cardiology, skin rash -> Dermatology, toothache -> Dentistry, "
+    "depression/anxiety -> Psychiatry, broken bone -> Orthopedics, stomach pain -> Gastroenterology, "
+    "child illness -> Pediatrics, eye problems -> Ophthalmology, ear/nose/throat -> ENT, "
+    "pregnancy -> Obstetrics/Gynecology, general checkup -> General Practitioner / Family Medicine). "
+    "(2) Look through the \"Nearby doctors\" list below and pick EVERY doctor whose specialty "
     "matches (exact match OR clearly related specialty). "
-    "(3) List ALL matching doctors — not just one — sorted by distance (closest first). "
+    "(3) List ALL matching doctors, not just one, sorted by distance (closest first). "
     "For each one, show the full details: name, specialty, address, phone, and distance. "
     "(4) If no doctor in the list matches the needed specialty, say so and suggest the nearest "
     "General Practitioner / Family Medicine doctor if one exists; otherwise tell the user that "
@@ -87,7 +141,125 @@ SYSTEM_PROMPT = (
     "(5) If the user asks about filling a prescription or buying medicine, list the nearby "
     "pharmacies with full contact info, sorted by distance. "
     "ONLY recommend doctors/pharmacies that appear in the lists below. Never invent entries. "
-    "If no nearby list is available, tell the user to set their address in the account screen."
+    "If no nearby list is available, tell the user to set their address in the account screen. "
+    "\n\nACTIONS (adding records on the user's behalf):\n"
+    "If, AND ONLY IF, the user clearly asks you to ADD / CREATE / SCHEDULE / RECORD a medication or "
+    "appointment for them (examples: \"add ibuprofen 400mg twice a day\", \"schedule a dentist visit "
+    "next Friday at 10am\", \"please save this prescription\"), follow this two-phase flow.\n"
+    "\n"
+    "DEFAULT DOSE UNIT: When the user gives a number with no unit (e.g. \"500\", \"100\"), assume **mg** "
+    "and write it that way in the dosage field (e.g. \"500 mg\"). Only use a different unit (mcg, g, mL, IU, "
+    "drops, puffs) when the user explicitly says so.\n"
+    "\n"
+    "PRN (TAKEN-WHEN-NEEDED) DETECTION: If the user describes the medication with phrases like "
+    "\"as needed\", \"when needed\", \"PRN\", \"only when X\", \"if I have a headache\", or any equivalent "
+    "in any language, treat it as a PRN medication: SKIP all schedule questions (no days, no times, no "
+    "start/end date), and set `prn` to true in the action fields. Reminders are not set for PRN meds.\n"
+    "\n"
+    "LIFETIME DETECTION: If the user says \"forever\", \"always\", \"lifetime\", \"ongoing\", \"indefinitely\", "
+    "\"for life\", or any equivalent in any language, set `lifetime` to true in the action fields. "
+    "In that case do not require an end date; only ask for the start date if missing.\n"
+    "\n"
+    "PHASE 1 -- COLLECT MISSING DETAILS.\n"
+    "Before you emit any action block you must have enough info to save the record. Do NOT guess or "
+    "invent values. If anything required is missing, REPLY WITH QUESTIONS ONLY -- no action block on "
+    "this turn. Be friendly and group your questions into one short message, not one at a time.\n"
+    "  For add_medication you need:\n"
+    "    - the medication name,\n"
+    "    - the dosage (apply the mg default above if no unit was given),\n"
+    "    - EITHER the user marks it as PRN (then nothing else is needed),\n"
+    "    - OR the schedule (days of the week, times of day) AND a start date AND either an end date "
+    "      or a lifetime flag.\n"
+    "    If the user has not specified PRN or a schedule, ASK for the days, times, and start/end date "
+    "    in plain language. Example: \"Got it -- which days should I remind you? What times of day? "
+    "    When do you want to start, and is it short-term (give me an end date) or ongoing (forever / "
+    "    lifetime)?\"\n"
+    "  For add_appointment you need:\n"
+    "    - title (who/what the appointment is with),\n"
+    "    - date (YYYY-MM-DD),\n"
+    "    - time (HH:MM, 24-hour).\n"
+    "\n"
+    "PHASE 2 -- EMIT THE ACTION BLOCK.\n"
+    "Once you have everything required, write a short, friendly **rundown** of exactly what you are "
+    "adding (e.g. \"I've added Ibuprofen 400 mg, every day at 08:00 and 20:00, starting today, lifetime.\") "
+    "WITH the medication-safety warning when relevant, then end the reply with a SINGLE fenced code "
+    "block exactly in this form, on its own lines:\n"
+    "```careme-action\n"
+    "{\"action\":\"add_medication\",\"fields\":{\"name\":\"...\",\"dosage\":\"...\",\"frequency\":\"...\","
+    "\"purpose\":\"...\",\"sideEffects\":\"...\",\"prn\":false,\"lifetime\":false,"
+    "\"startDate\":\"YYYY-MM-DD\",\"endDate\":\"YYYY-MM-DD\","
+    "\"schedule\":[{\"day\":\"Monday\",\"times\":[\"08:00\",\"20:00\"]}]}}\n"
+    "```\n"
+    "or\n"
+    "```careme-action\n"
+    "{\"action\":\"add_appointment\",\"fields\":{\"title\":\"...\",\"date\":\"YYYY-MM-DD\","
+    "\"time\":\"HH:MM\",\"type\":\"...\",\"location\":\"...\"}}\n"
+    "```\n"
+    "The app saves the record IMMEDIATELY when it sees this block -- it will NOT ask the user to "
+    "confirm. So your rundown text IS the confirmation; phrase it in the past tense (\"I've added\") "
+    "rather than \"I'm going to add\".\n"
+    "\n"
+    "Schedule rules:\n"
+    "  - `prn`: true means PRN, omit `schedule`, `startDate`, `endDate`, `lifetime` (or set them to "
+    "    empty string / false). The app will save the medication with the taken-when-needed checkbox on.\n"
+    "  - `lifetime`: true means no end date; you may omit `endDate` (or send empty string).\n"
+    "  - `schedule`: an array of objects {day, times}, where `day` is one of "
+    "    Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday, and `times` is an array of "
+    "    \"HH:MM\" strings (24-hour). Use this WHENEVER the user gave specific days/times. If they said "
+    "    \"every day at 8am and 8pm\", emit one entry per weekday.\n"
+    "  - `frequency` is a free-text human-readable summary (e.g. \"Daily at 08:00 and 20:00\", \"As needed\").\n"
+    "  - `startDate` / `endDate` use YYYY-MM-DD. If the user said \"starting today\", use today's date.\n"
+    "\n"
+    "DELETE AND UPDATE ACTIONS:\n"
+    "When the user asks you to REMOVE / DELETE / STOP / take off a medication or appointment, emit:\n"
+    "```careme-action\n"
+    "{\"action\":\"delete_medication\",\"fields\":{\"name\":\"Aspirin\"}}\n"
+    "```\n"
+    "or\n"
+    "```careme-action\n"
+    "{\"action\":\"delete_appointment\",\"fields\":{\"title\":\"Dentist\",\"date\":\"YYYY-MM-DD\"}}\n"
+    "```\n"
+    "Match the existing record by name (medication) or by title + date (appointment) -- both must come "
+    "from the lists supplied below in this prompt. If the user is ambiguous (e.g. they have two "
+    "appointments with similar titles), ASK which one before emitting the block. If the named "
+    "record doesn't exist in the lists, tell the user and DO NOT emit a block.\n"
+    "\n"
+    "When the user asks you to CHANGE / EDIT / MOVE / RESCHEDULE / RENAME / mark-as-history a "
+    "medication or appointment, emit `update_medication` / `update_appointment`:\n"
+    "```careme-action\n"
+    "{\"action\":\"update_medication\",\"fields\":{\"name\":\"Aspirin\",\"dosage\":\"200 mg\","
+    "\"history\":false,\"prn\":false,\"lifetime\":true,\"schedule\":[{\"day\":\"Monday\",\"times\":[\"09:00\"]}]}}\n"
+    "```\n"
+    "or\n"
+    "```careme-action\n"
+    "{\"action\":\"update_appointment\",\"fields\":{\"title\":\"Dentist\",\"date\":\"2026-05-10\","
+    "\"newTitle\":\"Dentist follow-up\",\"newDate\":\"2026-05-12\",\"newTime\":\"15:00\","
+    "\"location\":\"...\",\"type\":\"...\"}}\n"
+    "```\n"
+    "Update rules:\n"
+    "  - For `update_medication`, the `name` field identifies WHICH med to change (must match an "
+    "    existing med in the user's list). All OTHER fields are the new values; only include fields "
+    "    the user actually wants to change.\n"
+    "  - To rename a medication, supply `newName`. To mark as history (taken off), supply `history: true`.\n"
+    "  - For `update_appointment`, `title` + `date` identify WHICH appointment. Supply `newTitle`, "
+    "    `newDate`, `newTime`, `type`, or `location` for the changes.\n"
+    "  - When the user describes the change in past tense (e.g. \"I stopped taking aspirin\"), set "
+    "    `history: true` for that medication; do NOT delete it (the user wants the record preserved).\n"
+    "\n"
+    "Rules for the action block:\n"
+    "(a) The JSON must be valid and use straight quotes.\n"
+    "(b) Fill in only the fields the user actually specified plus the schedule/prn/lifetime flags you "
+    "    inferred from their wording per the rules above; leave free-text fields you have no info for "
+    "    as empty strings, do NOT invent values.\n"
+    "(c) Date format YYYY-MM-DD, time format 24-hour HH:MM.\n"
+    "(d) Emit AT MOST one action block per reply, and ONLY in Phase 2 (or directly when the user's "
+    "    delete / update intent is unambiguous).\n"
+    "(e) Do NOT emit an action block if the user is just asking ABOUT a medication or scheduling option, "
+    "    only when they explicitly want a record added, removed, or changed.\n"
+    "(f) Do NOT emit an action block while you are still missing required details listed in Phase 1.\n"
+    "(g) Always show your rundown reply BEFORE the block. Phrase it in the past tense for adds, "
+    "    deletes, and updates (\"I've added\", \"I've removed\", \"I've updated\") -- the app saves "
+    "    immediately when it sees the block, no popup."
 )
 
 
@@ -142,6 +314,24 @@ def _nearby_contacts(db, collection, user_lat, user_lng, limit=5, max_km=50.0):
 
 # ---------- helpers ----------
 
+def _age_from_dob(dob_str):
+    """Compute integer age in years from an ISO-ish date-of-birth string
+    (e.g. "1998-04-12" or "1998-04-12T00:00:00Z"). Returns None if we can't
+    parse it or the value is empty."""
+    if not dob_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(dob_str).replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+    today = datetime.now().date()
+    born = dt.date()
+    years = today.year - born.year - (
+        (today.month, today.day) < (born.month, born.day)
+    )
+    return years if years >= 0 else None
+
+
 def _parse_body(request):
     return json.loads(request.body)
 
@@ -156,6 +346,34 @@ def _str_id(doc):
 
 def _valid_email(email):
     return re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email or '')
+
+
+# Gemini's inline_data rejects generic types like application/octet-stream.
+# Map filename extensions to the subset Gemini accepts for the file kinds we
+# actually upload (lab reports). Kept conservative on purpose — adding a type
+# here means we expect Gemini to read it.
+_GEMINI_MIME_BY_EXT = {
+    'pdf': 'application/pdf',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'webp': 'image/webp',
+    'heic': 'image/heic',
+    'heif': 'image/heif',
+    'txt': 'text/plain',
+}
+_GEMINI_MIME_ALLOWED = set(_GEMINI_MIME_BY_EXT.values())
+
+
+def _infer_gemini_mime(filename, fallback=None):
+    """Return a Gemini-supported MIME for `filename`, or None if we can't
+    classify it. If `fallback` is already in the supported set, prefer it."""
+    if fallback and fallback in _GEMINI_MIME_ALLOWED:
+        return fallback
+    if not filename:
+        return None
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    return _GEMINI_MIME_BY_EXT.get(ext)
 
 
 # ---------- Auth ----------
@@ -219,7 +437,11 @@ def login(request):
 
     if user.get('deactivated'):
         return JsonResponse(
-            {'error': 'This account has been deactivated. Contact support to reactivate.'},
+            {
+                'error': 'This account has been deactivated.',
+                'code': 'account_deactivated',
+                'is_google_account': bool(user.get('google_account', False)),
+            },
             status=403,
         )
 
@@ -261,7 +483,11 @@ def google_auth(request):
 
     if user and user.get('deactivated'):
         return JsonResponse(
-            {'error': 'This account has been deactivated. Contact support to reactivate.'},
+            {
+                'error': 'This account has been deactivated.',
+                'code': 'account_deactivated',
+                'is_google_account': bool(user.get('google_account', False)),
+            },
             status=403,
         )
 
@@ -741,6 +967,189 @@ def medication_detail(request, med_id):
     return JsonResponse(_str_id(decrypt_document('medications', updated)))
 
 
+# ---------- Medication AI Suggestions ----------
+
+# Tiny in-process cache keyed by lower-cased prefix. Saves tokens when the
+# user types fast and triggers many calls back-to-back. TTL is 10 minutes.
+_NAME_SUGGEST_CACHE = {}
+_NAME_SUGGEST_TTL = timedelta(minutes=10)
+
+
+def _gemini_json(prompt_text, timeout=15):
+    """Call Gemini once expecting raw JSON in the reply. Returns the parsed
+    JSON, or None on any failure. Used by the medication-suggest endpoints."""
+    if not getattr(settings, 'GEMINI_API_KEY', ''):
+        return None
+    try:
+        resp = requests.post(
+            GEMINI_API_URL,
+            json={
+                'contents': [
+                    {'role': 'user', 'parts': [{'text': prompt_text}]},
+                ],
+                'generationConfig': {
+                    'response_mime_type': 'application/json',
+                    'temperature': 0.2,
+                },
+            },
+            timeout=timeout,
+        )
+        body = resp.json()
+        text = body['candidates'][0]['content']['parts'][0].get('text', '')
+        if not text:
+            return None
+        return json.loads(text)
+    except Exception as e:
+        print(f"_gemini_json error: {e}")
+        return None
+
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def suggest_medication_names(request):
+    """Typeahead for the Add Medication name field. Body: {q: "para"}.
+    Returns {names: ["Paracetamol", ...]}."""
+    data = _parse_body(request)
+    q = (data.get('q') or '').strip()
+    if len(q) < 2:
+        return JsonResponse({'names': []})
+
+    key = q.lower()
+    now = datetime.utcnow()
+    cached = _NAME_SUGGEST_CACHE.get(key)
+    if cached and now - cached[0] < _NAME_SUGGEST_TTL:
+        return JsonResponse({'names': cached[1]})
+
+    prompt = (
+        "Return up to 8 real medication names that begin with or fuzzy-match "
+        f"this prefix: \"{q}\". Output ONLY a JSON array of strings, no other "
+        "text. Use generic names where common; capitalise normally. Example "
+        "valid output: [\"Paracetamol\", \"Paroxetine\"]."
+    )
+    parsed = _gemini_json(prompt, timeout=10)
+
+    names = []
+    if isinstance(parsed, list):
+        names = [str(n).strip() for n in parsed if isinstance(n, (str, int))][:8]
+    # Trim duplicates while preserving order.
+    seen = set()
+    deduped = []
+    for n in names:
+        low = n.lower()
+        if not n or low in seen:
+            continue
+        seen.add(low)
+        deduped.append(n)
+
+    _NAME_SUGGEST_CACHE[key] = (now, deduped)
+    return JsonResponse({'names': deduped})
+
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def suggest_medication_fields(request):
+    """Fill purpose and side effects in the Add Medication dialog from the
+    medication's name. Body: {name: "Paracetamol"}.
+    Returns {purpose, sideEffects}."""
+    data = _parse_body(request)
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'error': 'name is required'}, status=400)
+
+    locale = _request_locale(request)
+    lang_clause = (
+        f"Write the values in the user's language (locale code: {locale}). "
+        "If the locale is 'ar' write in Arabic, 'fr' in French, 'es' in Spanish, "
+        "etc. Default to English when the locale is 'en' or unknown."
+    )
+
+    prompt = (
+        "You are filling a medication form for a patient app. Given the "
+        f"medication name \"{name}\", return ONLY a JSON object with keys: "
+        "purpose (one short sentence describing what it treats), "
+        "sideEffects (comma-separated list of the most common ones).\n"
+        f"{lang_clause}\n"
+        "Use plain text only, no emojis, no smart quotes, no em-dashes. "
+        "If you do not recognise the medication, return both values as empty "
+        "strings. Do NOT include any disclaimer or extra text outside the JSON."
+    )
+    parsed = _gemini_json(prompt, timeout=15) or {}
+
+    def _s(key):
+        v = parsed.get(key, '') if isinstance(parsed, dict) else ''
+        return (str(v) if v is not None else '').strip()
+
+    return JsonResponse({
+        'purpose': _s('purpose'),
+        'sideEffects': _s('sideEffects'),
+    })
+
+
+# Cache for chat-input completions: {(user_id, prefix_lower) -> (timestamp, list)}.
+# Saves Gemini calls when the user pauses then types the same prefix again.
+_CHAT_SUGGEST_CACHE = {}
+_CHAT_SUGGEST_TTL = timedelta(minutes=5)
+
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def chat_suggest(request):
+    """Inline completions for the chatbot input. Body:
+        {q: "what's the best ", history: [{text, isUser}, ...]}
+    Returns {suggestions: ["...", "...", "..."]}.
+
+    The completions are short follow-up phrases the user might want to type
+    next. Same language as the user's typed input. We pass a tiny slice of
+    recent chat history so the completions stay on-topic."""
+    data = _parse_body(request)
+    q = (data.get('q') or '')
+    if len(q.strip()) < 2:
+        return JsonResponse({'suggestions': []})
+
+    history = data.get('history') or []
+
+    cache_key = (request.user_id, q.strip().lower())
+    now = datetime.utcnow()
+    cached = _CHAT_SUGGEST_CACHE.get(cache_key)
+    if cached and now - cached[0] < _CHAT_SUGGEST_TTL:
+        return JsonResponse({'suggestions': cached[1]})
+
+    # Trim history to the last 4 turns of plain text so the prompt stays small.
+    recent = []
+    for m in (history or [])[-4:]:
+        role = 'user' if m.get('isUser') else 'assistant'
+        text = (m.get('text') or '').strip()
+        if text:
+            recent.append(f"{role}: {text[:300]}")
+    history_block = "\n".join(recent) if recent else "(no prior turns)"
+
+    prompt = (
+        "You are autocompleting a health-app chat input. The user has typed "
+        f"this partial message:\n\n\"{q}\"\n\n"
+        "Recent conversation (for context only, do NOT echo it back):\n"
+        f"{history_block}\n\n"
+        "Return up to 3 short, natural completions or follow-ups the user "
+        "MIGHT want to send next. Each suggestion should be a complete short "
+        "sentence the user can tap to send -- not just the next word. Reply in "
+        "the SAME LANGUAGE as the user's partial message. Stay strictly on "
+        "health, medications, appointments, lab results, symptoms, wellness. "
+        "Output ONLY a JSON array of strings, no other text. Example output: "
+        "[\"What are the side effects of ibuprofen?\", \"Can I take it with paracetamol?\"]."
+    )
+    parsed = _gemini_json(prompt, timeout=8)
+
+    suggestions = []
+    if isinstance(parsed, list):
+        for s in parsed[:3]:
+            if isinstance(s, str) and s.strip():
+                suggestions.append(s.strip())
+    _CHAT_SUGGEST_CACHE[cache_key] = (now, suggestions)
+    return JsonResponse({'suggestions': suggestions})
+
+
 # ---------- Lab Tests ----------
 
 @csrf_exempt
@@ -787,6 +1196,7 @@ def lab_tests(request):
             'doctor': doctor,
             'fileName': file_name,
             'fileId': str(file_id) if file_id else '',
+            'created_at': datetime.utcnow(),
         }
     else:
         data = _parse_body(request)
@@ -800,7 +1210,8 @@ def lab_tests(request):
             file_id = fs.put(
                 file_bytes,
                 filename=file_name,
-                content_type='application/octet-stream',
+                content_type=(_infer_gemini_mime(file_name)
+                              or 'application/octet-stream'),
                 user_id=request.user_id,
             )
 
@@ -811,6 +1222,7 @@ def lab_tests(request):
             'doctor': data.get('doctor', ''),
             'fileName': file_name,
             'fileId': str(file_id) if file_id else '',
+            'created_at': datetime.utcnow(),
         }
 
     if not lab['name']:
@@ -994,6 +1406,108 @@ def deactivate_account(request):
     return JsonResponse({'message': 'Account deactivated'})
 
 
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def delete_account(request):
+    """Permanently delete the user and all related data."""
+    db = get_db()
+    user_id = request.user_id
+
+    # Remove uploaded lab-test files from GridFS first.
+    fs = GridFS(db)
+    for lab in db.lab_tests.find({'user_id': user_id}, {'fileId': 1}):
+        file_id = lab.get('fileId')
+        if not file_id:
+            continue
+        try:
+            fs.delete(ObjectId(file_id))
+        except Exception:
+            pass
+
+    db.medications.delete_many({'user_id': user_id})
+    db.lab_tests.delete_many({'user_id': user_id})
+    db.audit_logs.delete_many({'user_id': user_id})
+
+    user = db.users.find_one({'_id': ObjectId(user_id)}, {'email': 1})
+    if user and user.get('email'):
+        db.otp_codes.delete_many({'email': user['email']})
+
+    db.users.delete_one({'_id': ObjectId(user_id)})
+
+    revoke_all_refresh_tokens(user_id)
+
+    return JsonResponse({'message': 'Account deleted'})
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def reactivate_account(request):
+    """Re-enable a deactivated account.
+    Body: { email, password (omitted for Google accounts), otp_code }.
+    Verifies the user's credentials and the OTP, clears the deactivated flag,
+    and returns a fresh token pair so the client can sign in immediately."""
+    data = _parse_body(request)
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+    otp_code = (data.get('otp_code') or '').strip()
+
+    if not email or not _valid_email(email):
+        return JsonResponse({'error': 'Valid email is required'}, status=400)
+    if not otp_code:
+        return JsonResponse({'error': 'Verification code is required'}, status=400)
+
+    db = get_db()
+    user = db.users.find_one({'email': email})
+    if not user:
+        return JsonResponse({'error': 'Account not found'}, status=404)
+
+    if not user.get('deactivated'):
+        return JsonResponse({'error': 'Account is already active'}, status=400)
+
+    is_google = bool(user.get('google_account', False))
+    if not is_google:
+        if not password:
+            return JsonResponse({'error': 'Password is required'}, status=400)
+        if not check_password(password, user.get('password', '')):
+            return JsonResponse({'error': 'Invalid email or password'}, status=401)
+
+    # Verify OTP
+    record = db.otp_codes.find_one({'email': email})
+    if not record:
+        return JsonResponse({'error': 'No verification code found. Please request a new one.'}, status=400)
+    if datetime.utcnow() > record['expires_at']:
+        db.otp_codes.delete_one({'email': email})
+        return JsonResponse({'error': 'Verification code has expired. Please request a new one.'}, status=400)
+    if record['code'] != otp_code:
+        return JsonResponse({'error': 'Invalid verification code.'}, status=400)
+    db.otp_codes.delete_one({'email': email})
+
+    # Reactivate
+    db.users.update_one(
+        {'_id': user['_id']},
+        {
+            '$unset': {'deactivated': '', 'deactivated_at': ''},
+            '$set': {'reactivated_at': datetime.utcnow()},
+        },
+    )
+
+    user_id = str(user['_id'])
+    access_token = create_token(user_id, email)
+    refresh_token = create_refresh_token(user_id, email)
+
+    return JsonResponse({
+        'token': access_token,
+        'refresh_token': refresh_token,
+        'user': {
+            'id': user_id,
+            'name': user.get('name', ''),
+            'email': email,
+            'is_admin': bool(user.get('is_admin', False)),
+        },
+    })
+
+
 # ---------- Export User Data ----------
 
 @csrf_exempt
@@ -1113,7 +1627,7 @@ def export_data(request):
 
     elements = []
     elements.append(Paragraph('CareMe - My Health Data', title_style))
-    elements.append(Paragraph(f'Generated for {user_name} on {datetime.now().strftime("%B %d, %Y")}', subtitle_style))
+    elements.append(Paragraph(f'Generated for {user_name} on {datetime.now().strftime("%B %d, %Y at %I:%M %p")}', subtitle_style))
 
     # Active Medications
     elements.append(Paragraph('Active Medications', heading_style))
@@ -1167,13 +1681,35 @@ def export_data(request):
 
 # ---------- Chatbot ----------
 
-def _build_chat_contents(user_id, user_message, history, attachment=None):
+def _lab_upload_dt(lab):
+    """Best-effort upload date for a lab record. Falls back to ObjectId
+    generation time so older rows (without `created_at`) still sort sensibly."""
+    ca = lab.get('created_at')
+    if ca:
+        try:
+            return ca.replace(tzinfo=None) if getattr(ca, 'tzinfo', None) else ca
+        except Exception:
+            return ca
+    raw_id = lab.get('_id')
+    if isinstance(raw_id, ObjectId):
+        try:
+            return raw_id.generation_time.replace(tzinfo=None)
+        except Exception:
+            return None
+    return None
+
+
+def _build_chat_contents(user_id, user_message, history, attachment=None, locale='en'):
     """Build the Gemini `contents` array from the user's stored context plus
     the supplied message + history. Shared by `chat` and `chat_stream`.
 
     `attachment` (optional): dict with keys `mimeType` and `data` (base64
     string). When present, the bytes are attached to the current user turn
-    as `inline_data` so Gemini can read the image or document."""
+    as `inline_data` so Gemini can read the image or document.
+
+    `locale` (default 'en'): the user's app UI language. Used as a fallback
+    hint when the language of the user's message is ambiguous; the system
+    prompt instructs Gemini that the message language always wins."""
     db = get_db()
 
     meds = list(db.medications.find({'user_id': user_id}))
@@ -1182,18 +1718,112 @@ def _build_chat_contents(user_id, user_message, history, attachment=None):
     labs = [decrypt_document('lab_tests', l) for l in labs]
     user = db.users.find_one({'_id': ObjectId(user_id)})
 
+    # Newest labs first so the model treats recent uploads as most relevant.
+    labs.sort(key=lambda l: _lab_upload_dt(l) or datetime.min, reverse=True)
+
+    today = datetime.now().date()
+
+    def _med_is_history(m):
+        if m.get('isHistory'):
+            return True
+        if m.get('isLifetime'):
+            return False
+        end_str = m.get('endDate')
+        if not end_str:
+            return False
+        try:
+            end_dt = datetime.fromisoformat(end_str.replace('Z', '+00:00')).date()
+            return end_dt < today
+        except (ValueError, TypeError):
+            return False
+
+    active_meds = [m for m in meds if not _med_is_history(m)]
+    history_meds = [m for m in meds if _med_is_history(m)]
+
+    def _med_line(m):
+        parts = [m.get('name', '').strip() or 'Unnamed']
+        if m.get('dosage'):
+            parts.append(f"dosage {m['dosage']}")
+        if m.get('frequency'):
+            parts.append(f"frequency {m['frequency']}")
+        if m.get('startDate'):
+            parts.append(f"started {m['startDate']}")
+        if m.get('isLifetime'):
+            parts.append('lifetime')
+        elif m.get('endDate'):
+            parts.append(f"ends {m['endDate']}")
+        return ' | '.join(parts)
+
     context_parts = [SYSTEM_PROMPT]
+
+    context_parts.append(f"\n\nUser UI locale: {locale or 'en'}")
 
     if user:
         context_parts.append(f"\nUser name: {user.get('name', 'Unknown')}")
+        user_age = _age_from_dob(user.get('dateOfBirth'))
+        if user_age is not None:
+            if user_age < 12:
+                age_band = 'child'
+            elif user_age < 18:
+                age_band = 'adolescent'
+            elif user_age >= 65:
+                age_band = 'older adult'
+            else:
+                age_band = 'adult'
+            context_parts.append(
+                f"\nUser age: {user_age} ({age_band}). When suggesting any "
+                "medication or dosage you MUST tailor it to this age group "
+                "(paediatric weight-based dosing for children, reduced/geriatric "
+                "doses for older adults, etc.). Never quote a generic adult dose "
+                "for a child or older adult without flagging the adjustment."
+            )
+        else:
+            context_parts.append(
+                "\nUser age: not on file. Before suggesting a dosage, ask the user "
+                "their age (or recommend they add a date of birth in their account) "
+                "so you can give an age-appropriate dose."
+            )
 
-    if meds:
-        med_list = ', '.join(f"{m.get('name', '')} ({m.get('dosage', '')})" for m in meds)
-        context_parts.append(f"\nUser's current medications: {med_list}")
+    if active_meds:
+        context_parts.append(
+            "\nUser's active medications (currently being taken, use these for interaction "
+            "and pre-surgery checks):\n- "
+            + "\n- ".join(_med_line(m) for m in active_meds)
+        )
+    else:
+        context_parts.append(
+            "\nUser's active medications: NONE on file. Ask the user to confirm what they are taking "
+            "before giving a safety opinion."
+        )
+
+    if history_meds:
+        history_line = ', '.join(
+            f"{m.get('name', '')} ({m.get('dosage', '')})".strip() for m in history_meds
+        )
+        context_parts.append(
+            f"\nUser's past medications (no longer active, for reference only, not interaction checks): {history_line}"
+        )
 
     if labs:
-        lab_list = ', '.join(f"{l.get('name', '')} on {l.get('date', '')}" for l in labs)
-        context_parts.append(f"\nUser's recent lab tests: {lab_list}")
+        def _lab_text_line(l):
+            bits = [l.get('name', '') or 'Unnamed test']
+            if l.get('date'):
+                bits.append(f"test date {l['date']}")
+            if l.get('doctor'):
+                bits.append(f"doctor {l['doctor']}")
+            up = _lab_upload_dt(l)
+            if up:
+                bits.append(f"uploaded {up.strftime('%Y-%m-%d')}")
+            if l.get('fileName'):
+                bits.append(f"file {l['fileName']}")
+            return ' | '.join(b for b in bits if b)
+
+        context_parts.append(
+            "\nUser's lab tests (newest upload first):\n- "
+            + "\n- ".join(_lab_text_line(l) for l in labs)
+        )
+    else:
+        context_parts.append("\nUser's recent lab tests: NONE on file.")
 
     user_lat = user.get('latitude') if user else None
     user_lng = user.get('longitude') if user else None
@@ -1216,8 +1846,67 @@ def _build_chat_contents(user_id, user_message, history, attachment=None):
 
     system_context = ''.join(context_parts)
 
+    # Auto-attach up to 5 most-recent uploaded lab files (PDFs / images) so
+    # the AI always has the user's recent reports to refer to. Capped at 8 MB
+    # total to stay well under Gemini's 20 MB inline_data limit and to keep
+    # request latency reasonable.
+    file_parts = []
+    total_bytes = 0
+    MAX_FILES = 5
+    MAX_TOTAL_BYTES = 8 * 1024 * 1024
+    try:
+        fs = GridFS(db)
+    except Exception:
+        fs = None
+    if fs is not None:
+        for lab in labs:
+            if len(file_parts) >= MAX_FILES:
+                break
+            file_id = lab.get('fileId')
+            if not file_id:
+                continue
+            try:
+                grid_file = fs.get(ObjectId(file_id))
+            except Exception:
+                continue
+            try:
+                file_bytes = grid_file.read()
+            except Exception:
+                continue
+            if not file_bytes:
+                continue
+            if total_bytes + len(file_bytes) > MAX_TOTAL_BYTES:
+                continue
+            # Older uploads were stored as application/octet-stream; recover a
+            # real MIME from the filename. If we still can't classify it,
+            # skip — sending octet-stream causes Gemini to 400.
+            mime = _infer_gemini_mime(
+                getattr(grid_file, 'filename', '') or lab.get('fileName', ''),
+                fallback=grid_file.content_type,
+            )
+            if not mime:
+                continue
+            file_parts.append({
+                'inline_data': {
+                    'mime_type': mime,
+                    'data': base64.b64encode(file_bytes).decode('utf-8'),
+                }
+            })
+            total_bytes += len(file_bytes)
+
+    intro_parts = [{'text': system_context + '\n\nPlease acknowledge you understand your role.'}]
+    if file_parts:
+        intro_parts.append({
+            'text': (
+                f"\nThe next {len(file_parts)} attachment(s) are the user's recent uploaded lab "
+                "report files, ordered newest first. Read them and use their contents when "
+                "answering questions about labs, results, or trends."
+            )
+        })
+        intro_parts.extend(file_parts)
+
     contents = [
-        {'role': 'user', 'parts': [{'text': system_context + '\n\nPlease acknowledge you understand your role.'}]},
+        {'role': 'user', 'parts': intro_parts},
         {'role': 'model', 'parts': [{'text': "Understood! I'm CareAI, ready to help with your health needs."}]},
     ]
 
@@ -1227,15 +1916,22 @@ def _build_chat_contents(user_id, user_message, history, attachment=None):
 
     # Compose the final user turn. If an attachment is supplied, it goes
     # first as inline_data so Gemini can read the file, followed by the
-    # user's text question.
+    # user's text question. Reject MIME types Gemini won't accept (e.g.
+    # application/octet-stream from an unrecognised extension) — sending
+    # those causes a 400 mid-stream.
     user_parts = []
     if attachment and attachment.get('data') and attachment.get('mimeType'):
-        user_parts.append({
-            'inline_data': {
-                'mime_type': attachment['mimeType'],
-                'data': attachment['data'],
-            }
-        })
+        att_mime = _infer_gemini_mime(
+            attachment.get('name') or attachment.get('filename'),
+            fallback=attachment.get('mimeType'),
+        )
+        if att_mime:
+            user_parts.append({
+                'inline_data': {
+                    'mime_type': att_mime,
+                    'data': attachment['data'],
+                }
+            })
     if user_message:
         user_parts.append({'text': user_message})
     # Fallback: always include at least one text part so the request is valid.
@@ -1244,6 +1940,17 @@ def _build_chat_contents(user_id, user_message, history, attachment=None):
 
     contents.append({'role': 'user', 'parts': user_parts})
     return contents
+
+
+def _request_locale(request):
+    """Pick the user's preferred language code from the request. Looks at
+    Accept-Language first (Flutter sends 'ar' or 'en'), then a body 'locale'
+    field, then defaults to English."""
+    raw = (request.META.get('HTTP_ACCEPT_LANGUAGE') or '').split(',')[0].strip()
+    if raw:
+        # Strip region: 'ar-SA' -> 'ar'
+        return raw.split('-')[0].split(';')[0].lower() or 'en'
+    return 'en'
 
 
 @csrf_exempt
@@ -1258,8 +1965,10 @@ def chat(request):
         return JsonResponse({'error': 'Message or attachment is required'}, status=400)
 
     history = data.get('history', [])
+    locale = data.get('locale') or _request_locale(request)
     contents = _build_chat_contents(
-        request.user_id, user_message, history, attachment=attachment)
+        request.user_id, user_message, history,
+        attachment=attachment, locale=locale)
 
     try:
         resp = requests.post(
@@ -1301,10 +2010,18 @@ def chat_stream(request):
         return JsonResponse({'error': 'Message or attachment is required'}, status=400)
 
     history = data.get('history', [])
+    locale = data.get('locale') or _request_locale(request)
     contents = _build_chat_contents(
-        request.user_id, user_message, history, attachment=attachment)
+        request.user_id, user_message, history,
+        attachment=attachment, locale=locale)
 
     def _stream():
+        # Track everything we've already emitted so we never re-send the same
+        # text twice. Gemini streaming sometimes interleaves cumulative
+        # snapshots and per-token deltas (especially when google_search
+        # grounding kicks in), which previously made the bot say the same
+        # answer twice. The check below works for either mode.
+        emitted = ""
         try:
             with requests.post(
                 GEMINI_STREAM_URL,
@@ -1313,30 +2030,72 @@ def chat_stream(request):
                 timeout=60,
             ) as resp:
                 if resp.status_code != 200:
-                    err = resp.text[:500]
-                    print(f"Gemini stream error {resp.status_code}: {err}")
-                    yield f'data: {json.dumps({"error": "Upstream error"})}\n\n'
+                    err_body = resp.text[:500]
+                    print(f"Gemini stream error {resp.status_code}: {err_body}")
+                    # Pull the human-readable message out of Google's standard
+                    # error envelope so the user (and dev) sees what's wrong
+                    # instead of a generic "Upstream error".
+                    detail = ''
+                    try:
+                        parsed = json.loads(err_body)
+                        if isinstance(parsed, dict):
+                            detail = (parsed.get('error') or {}).get('message') or ''
+                    except (ValueError, TypeError):
+                        pass
+                    if not detail:
+                        detail = f'AI service returned HTTP {resp.status_code}'
+                    yield f'data: {json.dumps({"error": detail})}\n\n'
                     return
 
                 for raw_line in resp.iter_lines(decode_unicode=True):
                     if not raw_line:
                         continue
                     # SSE lines from Gemini look like: `data: {...}`
-                    if raw_line.startswith('data:'):
-                        payload = raw_line[5:].strip()
-                        if not payload or payload == '[DONE]':
-                            continue
-                        try:
-                            chunk = json.loads(payload)
-                        except json.JSONDecodeError:
-                            continue
-                        try:
-                            part = chunk['candidates'][0]['content']['parts'][0]
-                            text = part.get('text', '')
-                        except (KeyError, IndexError, TypeError):
-                            text = ''
-                        if text:
-                            yield f'data: {json.dumps({"text": text})}\n\n'
+                    if not raw_line.startswith('data:'):
+                        continue
+                    payload = raw_line[5:].strip()
+                    if not payload or payload == '[DONE]':
+                        continue
+                    try:
+                        chunk = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+
+                    # Concatenate every non-thought text part on candidate 0.
+                    # The previous code only read parts[0] which dropped
+                    # answer text whenever Gemini returned multiple parts
+                    # (e.g. [{thought:true,...},{text:answer}]).
+                    chunk_text = ''
+                    try:
+                        candidates = chunk.get('candidates') or []
+                        if candidates:
+                            parts = (candidates[0].get('content') or {}).get('parts') or []
+                            for part in parts:
+                                if part.get('thought'):
+                                    continue
+                                t = part.get('text') or ''
+                                if t:
+                                    chunk_text += t
+                    except (KeyError, IndexError, TypeError, AttributeError):
+                        chunk_text = ''
+
+                    if not chunk_text:
+                        continue
+
+                    # Cumulative snapshot: chunk contains everything we have
+                    # plus a new suffix. Only send the suffix.
+                    if chunk_text.startswith(emitted) and len(chunk_text) > len(emitted):
+                        new_text = chunk_text[len(emitted):]
+                        emitted = chunk_text
+                    elif chunk_text == emitted:
+                        # Exact duplicate, swallow it.
+                        continue
+                    else:
+                        # Delta: append as-is.
+                        new_text = chunk_text
+                        emitted += chunk_text
+
+                    yield f'data: {json.dumps({"text": new_text})}\n\n'
                 yield 'data: {"done": true}\n\n'
         except Exception as e:
             import traceback

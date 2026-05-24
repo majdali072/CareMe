@@ -9,8 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.6
-  intl: ^0.19.0
+  intl: ^0.20.2
   http: ^1.2.0
   file_picker: ^8.0.0
   http_parser: ^4.0.0
@@ -31,6 +33,7 @@ dependencies:
   shared_preferences: ^2.2.3
   firebase_core: ^3.8.1
   firebase_messaging: ^15.2.0
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -41,13 +44,13 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/CareMe-Logo.png"
+  image_path: "assets/CareMe_Logo.png"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/CareMe-Logo.png"
+  adaptive_icon_foreground: "assets/CareMe_Logo.png"
 
 flutter:
   uses-material-design: true
 
   assets:
-    - assets/CareMe-Logo.png
+    - assets/CareMe_Logo.png
     - assets/Google_Logo.webp
