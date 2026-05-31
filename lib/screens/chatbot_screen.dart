@@ -81,6 +81,11 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   final List<ChatSession> _sessions = [];
   int _currentSessionIdx = 0;
 
+  // Per-session user-message count at which we last (re)generated the title,
+  // so we refresh the title as the conversation grows without calling the
+  // backend on every single turn.
+  final Map<String, int> _titledAtUserCount = {};
+
   // Inline-completion state. `_suggestions` holds up to 3 phrases shown as
   // chips above the input; refreshed via a debounce timer as the user types.
   List<String> _suggestions = const [];
@@ -291,10 +296,12 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     }
     // If every message expired, drop the whole session.
     if (messages.isEmpty) return null;
+    final rawTitle = (entry['title'] ?? '').toString().trim();
     return ChatSession(
       id: id.isNotEmpty ? id : DateTime.now().microsecondsSinceEpoch.toString(),
       startedAt: startedAt ?? messages.first.timestamp,
       messages: messages,
+      title: rawTitle.isEmpty ? null : rawTitle,
     );
   }
 
@@ -308,6 +315,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       payload.add({
         'id': s.id,
         'startedAt': s.startedAt.toIso8601String(),
+        'title': s.title,
         'messages': s.messages
             // Drop the banner — it's regenerated on every load and isn't part
             // of the actual conversational record.
@@ -336,6 +344,39 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     }).toList();
   }
 
+  /// Compact transcript of [session] (excluding the banner) for title
+  /// generation. Caps to the most recent turns to keep the request small.
+  List<Map<String, dynamic>> _historyForTitle(ChatSession session) {
+    final msgs = session.messages.where((m) => m.id != 1).toList();
+    const limit = 12;
+    final start = msgs.length > limit ? msgs.length - limit : 0;
+    return msgs
+        .sublist(start)
+        .map((m) => {'text': m.text, 'isUser': m.isUser})
+        .toList();
+  }
+
+  /// Ask the backend for a short title summarizing [session] and store it.
+  /// Runs after an AI reply completes. Regenerates while the conversation is
+  /// young (so the title reflects the emerging topic, not just the first
+  /// message) and then refreshes every few turns as it grows.
+  Future<void> _maybeGenerateTitle(ChatSession session) async {
+    final userCount = session.messages.where((m) => m.isUser).length;
+    if (userCount == 0) return;
+
+    final hasTitle = (session.title?.trim().isNotEmpty ?? false);
+    final lastTitled = _titledAtUserCount[session.id] ?? 0;
+    final shouldTitle = !hasTitle || userCount <= 3 || (userCount - lastTitled) >= 4;
+    if (!shouldTitle) return;
+
+    _titledAtUserCount[session.id] = userCount;
+    final title = await ApiService.generateChatTitle(_historyForTitle(session));
+    if (!mounted || title.trim().isEmpty) return;
+    if (!_sessions.contains(session)) return;
+    setState(() => session.title = title.trim());
+    _saveSessions();
+  }
+
   void _sendMessage([String? text]) {
     final content = text ?? _inputCtrl.text.trim();
     final attachment = _attachment;
@@ -348,6 +389,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
     final t = AppLocalizations.of(context);
     final history = _buildHistory();
+    // Capture the session this turn belongs to so a late-arriving title
+    // update lands on the right chat even if the user switched sessions.
+    final targetSession = _currentSession;
     // Describe the attachment in the visible user-message bubble so there's
     // a record of what was sent.
     String visibleText = content;
@@ -464,6 +508,8 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         _saveHistory();
         finalizeStream();
         _scrollToBottom();
+        // Give the chat an AI-generated title based on the whole conversation.
+        _maybeGenerateTitle(targetSession);
       },
       cancelOnError: true,
     );
@@ -747,7 +793,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     onPressed: _showHistorySheet,
                   ),
                   IconButton(
-                    icon: const Icon(Icons.add_comment_outlined, color: Colors.white),
+                    icon: const Icon(Icons.edit_square, color: Colors.white),
                     tooltip: AppLocalizations.of(context).t('chat_new_session_tooltip'),
                     onPressed: _startNewSession,
                   ),
@@ -1377,10 +1423,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     final idx = entries[i];
                     final session = _sessions[idx];
                     final isCurrent = idx == _currentSessionIdx;
-                    final preview = session.previewTitle();
+                    final preview = session.displayTitle();
                     return ListTile(
                       leading: Icon(
-                        isCurrent ? Icons.chat_bubble : Icons.chat_bubble_outline,
+                        isCurrent ? Icons.auto_awesome : Icons.auto_awesome_outlined,
                         color: isCurrent
                             ? AppColors.accent(context)
                             : AppColors.textMuted(context),

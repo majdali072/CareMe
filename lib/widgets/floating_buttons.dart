@@ -133,7 +133,7 @@ class _FloatingButtonsState extends State<FloatingButtons> with SingleTickerProv
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [BoxShadow(color: const Color(0xFF9333EA).withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 4))],
               ),
-              child: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 24),
+              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 24),
             ),
           ),
         ],

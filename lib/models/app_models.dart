@@ -197,6 +197,7 @@ class Appointment {
   final String time;
   final String type;
   final String location;
+  final String doctor;
   final String? googleEventId;
 
   Appointment({
@@ -206,6 +207,7 @@ class Appointment {
     required this.time,
     required this.type,
     required this.location,
+    this.doctor = '',
     this.googleEventId,
   });
 
@@ -227,6 +229,7 @@ class Appointment {
     String? time,
     String? type,
     String? location,
+    String? doctor,
     String? googleEventId,
   }) {
     return Appointment(
@@ -236,6 +239,7 @@ class Appointment {
       time: time ?? this.time,
       type: type ?? this.type,
       location: location ?? this.location,
+      doctor: doctor ?? this.doctor,
       googleEventId: googleEventId ?? this.googleEventId,
     );
   }
@@ -264,10 +268,15 @@ class ChatSession {
   final DateTime startedAt;
   final List<ChatMessage> messages;
 
+  /// AI-generated short title summarizing the whole conversation. Null until
+  /// generated; the history list falls back to the first user message.
+  String? title;
+
   ChatSession({
     required this.id,
     required this.startedAt,
     required this.messages,
+    this.title,
   });
 
   /// Timestamp of the most recent message (for retention + sort).
@@ -293,5 +302,13 @@ class ChatSession {
     final raw = firstUser.text.trim();
     if (raw.isEmpty) return '';
     return raw.length <= 60 ? raw : '${raw.substring(0, 57)}…';
+  }
+
+  /// Title to show in the history list: the AI-generated [title] when
+  /// available, otherwise a preview of the first user message.
+  String displayTitle() {
+    final t = title?.trim() ?? '';
+    if (t.isNotEmpty) return t;
+    return previewTitle();
   }
 }

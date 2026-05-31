@@ -20,7 +20,6 @@ class AddScheduleDialog extends StatefulWidget {
 
 class _AddScheduleDialogState extends State<AddScheduleDialog> {
   final _titleCtrl = TextEditingController();
-  final _typeCtrl = TextEditingController();
   final _doctorCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
   final _dateCtrl = TextEditingController();
@@ -28,6 +27,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
   DateTime? _pickedDate;
   TimeOfDay? _pickedTime;
   String? _alertType;
+  String? _error;
   bool _submitting = false;
 
   // Google Sign-In state
@@ -43,8 +43,12 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
     super.initState();
     final init = widget.initialFields;
     if (init != null) {
-      _titleCtrl.text = init['title'] ?? '';
-      _typeCtrl.text = init['type'] ?? '';
+      // Title and appointment type are now a single field; fall back to the
+      // type when a CareAI prefill only supplied a type.
+      _titleCtrl.text = (init['title']?.isNotEmpty ?? false)
+          ? init['title']!
+          : (init['type'] ?? '');
+      _doctorCtrl.text = init['doctor'] ?? '';
       _locationCtrl.text = init['location'] ?? '';
       final dateStr = init['date'] ?? '';
       if (dateStr.isNotEmpty) {
@@ -101,8 +105,17 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
   }
 
   Future<void> _submit() async {
-    if (_titleCtrl.text.isEmpty || _typeCtrl.text.isEmpty || _dateCtrl.text.isEmpty || _timeCtrl.text.isEmpty) return;
-    if (_pickedDate == null || _pickedTime == null) return;
+    if (_titleCtrl.text.trim().isEmpty ||
+        _doctorCtrl.text.trim().isEmpty ||
+        _locationCtrl.text.trim().isEmpty ||
+        _dateCtrl.text.isEmpty ||
+        _timeCtrl.text.isEmpty ||
+        _pickedDate == null ||
+        _pickedTime == null) {
+      setState(() => _error =
+          AppLocalizations.of(context).t('dlg_sched_validation_required'));
+      return;
+    }
     // Random 20% conflict
     if (DateTime.now().millisecond % 5 == 0) {
       setState(() => _alertType = 'conflict');
@@ -120,7 +133,6 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
     );
 
     final description = [
-      if (_typeCtrl.text.isNotEmpty) 'Type: ${_typeCtrl.text}',
       if (_doctorCtrl.text.isNotEmpty) 'Doctor: ${_doctorCtrl.text}',
       'Created via CareMe',
     ].join('\n');
@@ -140,8 +152,9 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
       fullDate: _pickedDate,
       title: _titleCtrl.text,
       time: _timeCtrl.text,
-      type: _typeCtrl.text,
+      type: '',
       location: _locationCtrl.text,
+      doctor: _doctorCtrl.text,
       googleEventId: eventId,
     ));
 
@@ -177,21 +190,18 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                     // Google Calendar sign-in section
                     _buildGoogleCalendarSection(),
                     const SizedBox(height: 14),
-                    _field(AppLocalizations.of(context).t('dlg_sched_title_field'),
-                        _titleCtrl, AppLocalizations.of(context).t('dlg_sched_title_hint')),
+                    _field('${AppLocalizations.of(context).t('dlg_sched_appointment_field')} *',
+                        _titleCtrl, AppLocalizations.of(context).t('dlg_sched_appointment_hint')),
                     const SizedBox(height: 14),
-                    _field(AppLocalizations.of(context).t('dlg_sched_type_field'),
-                        _typeCtrl, AppLocalizations.of(context).t('dlg_sched_type_hint')),
-                    const SizedBox(height: 14),
-                    _field(AppLocalizations.of(context).t('dlg_sched_doctor'),
+                    _field('${AppLocalizations.of(context).t('dlg_sched_doctor')} *',
                         _doctorCtrl, AppLocalizations.of(context).t('dlg_sched_doctor_hint')),
                     const SizedBox(height: 14),
-                    _field(AppLocalizations.of(context).t('dlg_sched_location'),
+                    _field('${AppLocalizations.of(context).t('dlg_sched_location')} *',
                         _locationCtrl, AppLocalizations.of(context).t('dlg_sched_location_hint')),
                     const SizedBox(height: 14),
-                    _datePickerField(AppLocalizations.of(context).t('dlg_sched_date'), _dateCtrl),
+                    _datePickerField('${AppLocalizations.of(context).t('dlg_sched_date')} *', _dateCtrl),
                     const SizedBox(height: 14),
-                    _timePickerField(AppLocalizations.of(context).t('dlg_sched_time'), _timeCtrl),
+                    _timePickerField('${AppLocalizations.of(context).t('dlg_sched_time')} *', _timeCtrl),
                     const SizedBox(height: 14),
                     if (_alertType == 'success')
                       _alert(true, AppLocalizations.of(context).t('dlg_sched_alert_synced')),
@@ -201,6 +211,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                       _alert(false, AppLocalizations.of(context).t('dlg_sched_alert_gcal_failed')),
                     if (_alertType == 'conflict')
                       _alert(false, AppLocalizations.of(context).t('dlg_sched_alert_conflict')),
+                    if (_error != null) _alert(false, _error!),
                     const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,

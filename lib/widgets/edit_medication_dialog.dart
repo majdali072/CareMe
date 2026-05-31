@@ -32,6 +32,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
   bool _isLifetime = false;
   bool _isHistory = false;
   bool _isPrn = false;
+  String? _error;
 
   static const List<String> _weekDays = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday',
@@ -143,6 +144,32 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
   }
 
   void _save() {
+    final t = AppLocalizations.of(context);
+    // Name & dosage are always required.
+    if (_name.text.trim().isEmpty || _dosage.text.trim().isEmpty) {
+      setState(() => _error = t.t('dlg_med_validation_name_dosage'));
+      return;
+    }
+    // PRN skips schedule & duration entirely (both locked). Otherwise the
+    // Schedule is required unless History locks it, and the Duration dates are
+    // required (Duration is only locked by PRN).
+    if (!_isPrn) {
+      final hasValidSchedule =
+          _schedule.isNotEmpty && _schedule.any((e) => e.times.isNotEmpty);
+      if (!_isHistory && !hasValidSchedule) {
+        setState(() => _error = t.t('dlg_med_validation_schedule'));
+        return;
+      }
+      if (_startDate == null) {
+        setState(() => _error = t.t('dlg_med_validation_start_date'));
+        return;
+      }
+      if (!_isLifetime && _endDate == null) {
+        setState(() => _error = t.t('dlg_med_validation_end_date'));
+        return;
+      }
+    }
+
     // Auto-compute frequency from schedule (or "As needed" for PRN).
     String freq;
     if (_isPrn) {
@@ -344,8 +371,8 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                 children: [
 
             // Basic fields
-            _field(AppLocalizations.of(context).t('dlg_med_name_label'), _name),
-            _field(AppLocalizations.of(context).t('meds_dosage_label'), _dosage),
+            _field('${AppLocalizations.of(context).t('dlg_med_name_label')} *', _name),
+            _field('${AppLocalizations.of(context).t('meds_dosage_label')} *', _dosage),
             _field(AppLocalizations.of(context).t('dlg_med_purpose_label'), _purpose),
             _field(AppLocalizations.of(context).t('meds_possible_side_effects'), _sideEffects, maxLines: 2),
 
@@ -354,7 +381,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
             const SizedBox(height: 12),
 
             // Status (Active / History)
-            Text(AppLocalizations.of(context).t('dlg_med_status_label_no_star'),
+            Text('${AppLocalizations.of(context).t('dlg_med_status_label_no_star')} *',
                 style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
@@ -378,7 +405,10 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                   children: [
                     Row(
                       children: [
-                        Text(AppLocalizations.of(context).t('dlg_med_reminder_schedule'),
+                        Text(
+                            (_isHistory || _isPrn)
+                                ? AppLocalizations.of(context).t('dlg_med_reminder_schedule')
+                                : '${AppLocalizations.of(context).t('dlg_med_reminder_schedule')} *',
                             style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
@@ -457,7 +487,10 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                   children: [
                     Row(
                       children: [
-                        Text(AppLocalizations.of(context).t('meds_duration'),
+                        Text(
+                            _isPrn
+                                ? AppLocalizations.of(context).t('meds_duration')
+                                : '${AppLocalizations.of(context).t('meds_duration')} *',
                             style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
@@ -542,6 +575,20 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                 ),
               ),
             ),
+
+            if (_error != null) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 18),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(_error!,
+                        style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
+                  ),
+                ],
+              ),
+            ],
 
             const SizedBox(height: 24),
 

@@ -17,7 +17,8 @@ from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMultiAlternatives
+from email.utils import formataddr
 from .db import get_db
 from .auth_utils import (
     hash_password, check_password, create_token, login_required, admin_required,
@@ -71,19 +72,9 @@ SYSTEM_PROMPT = (
     "For quotes use straight \" and '. For arrows use \"->\". Keep formatting simple: short paragraphs, "
     "plain bullet points with \"-\", and bold via Markdown (**text**) only when it really helps. "
     "\n\nLANGUAGE (highest priority, overrides every other rule below):\n"
-    "Look at the LAST user message in this conversation and identify the language it is written in. "
-    "You MUST reply in EXACTLY that language, regardless of the app's UI locale, regardless of what "
-    "language earlier turns used, and regardless of the language this system prompt is in. Examples:\n"
-    "- User writes in Arabic -> entire reply in Arabic, including the safety warning, doctor labels, "
-    "  refusals, and the consult-your-doctor reminder. Use Arabic medical terminology.\n"
-    "- User writes in French -> entire reply in French.\n"
-    "- User writes in Spanish -> entire reply in Spanish.\n"
-    "- User writes in mixed languages -> reply in the dominant language of their message.\n"
-    "- User writes a single word or emoji that doesn't reveal a language -> use the 'User UI locale' "
-    "  hint at the end of this prompt.\n"
-    "Translate ALL fixed phrases, including warnings and disclaimers, into the user's message language. "
-    "Never reply in English just because this prompt is in English. The user's message language ALWAYS "
-    "wins, with the locale hint only used as a tiebreaker when the message has no detectable language. "
+    "Always reply in English, no matter what language the user writes in. All of your "
+    "output - including safety warnings, disclaimers, doctor labels, and refusals - must be "
+    "in English. If the user writes in another language, still answer in English. "
     "\n\nMEDICATION SAFETY:\n"
     "WHENEVER you mention, suggest, recommend, or discuss a specific medication, including "
     "over-the-counter drugs, supplements, dosages, or alternatives, you MUST end that response with a "
@@ -131,17 +122,24 @@ SYSTEM_PROMPT = (
     "depression/anxiety -> Psychiatry, broken bone -> Orthopedics, stomach pain -> Gastroenterology, "
     "child illness -> Pediatrics, eye problems -> Ophthalmology, ear/nose/throat -> ENT, "
     "pregnancy -> Obstetrics/Gynecology, general checkup -> General Practitioner / Family Medicine). "
-    "(2) Look through the \"Nearby doctors\" list below and pick EVERY doctor whose specialty "
-    "matches (exact match OR clearly related specialty). "
-    "(3) List ALL matching doctors, not just one, sorted by distance (closest first). "
-    "For each one, show the full details: name, specialty, address, phone, and distance. "
-    "(4) If no doctor in the list matches the needed specialty, say so and suggest the nearest "
-    "General Practitioner / Family Medicine doctor if one exists; otherwise tell the user that "
-    "no suitable doctor is currently listed. "
-    "(5) If the user asks about filling a prescription or buying medicine, list the nearby "
-    "pharmacies with full contact info, sorted by distance. "
+    "(2) Search the \"Nearby doctors in the user's country\" list, which is already sorted "
+    "nearest-first. Recommend the CLOSEST doctor(s) whose specialty matches (exact match OR "
+    "clearly related specialty) — start with the nearest and list matches in order of distance. "
+    "Show full details for each: name, specialty, address, phone, and distance. "
+    "(3) If no doctor in the user's country matches the needed specialty, suggest the nearest "
+    "General Practitioner / Family Medicine doctor in their country instead, if one exists. "
+    "(4) If there is NO suitable doctor anywhere in the user's country, tell the user exactly: "
+    "\"I didn't find anything in your country. Do you want me to search in nearby countries?\" "
+    "and then STOP and wait for their answer. Do NOT list other-country doctors yet. "
+    "If the user replies yes, recommend the nearest matching doctors from the "
+    "\"Doctors in OTHER countries\" list (nearest-first, include the country). If the user "
+    "replies no, stop searching and do not list any. "
+    "(5) If the user asks about filling a prescription or buying medicine, apply the SAME logic "
+    "to pharmacies: recommend the nearest in their country; if none, ask the same "
+    "\"...search in nearby countries?\" question and only use the other-country pharmacies after "
+    "they say yes. "
     "ONLY recommend doctors/pharmacies that appear in the lists below. Never invent entries. "
-    "If no nearby list is available, tell the user to set their address in the account screen. "
+    "If no list is available at all, tell the user to set their address in the account screen. "
     "\n\nACTIONS (adding records on the user's behalf):\n"
     "If, AND ONLY IF, the user clearly asks you to ADD / CREATE / SCHEDULE / RECORD a medication or "
     "appointment for them (examples: \"add ibuprofen 400mg twice a day\", \"schedule a dentist visit "
@@ -272,45 +270,84 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def _nearby_contacts(db, collection, user_lat, user_lng, limit=5, max_km=50.0):
+def _contact_line(dist, d, with_country=False):
+    """Format a single doctor/pharmacy entry as a readable line."""
+    parts = [d.get('name', '')]
+    specialty = d.get('specialty', '')
+    addr = d.get('address', '')
+    phone = d.get('phone', '')
+    if specialty:
+        parts.append(f"specialty: {specialty}")
+    if addr:
+        parts.append(f"address: {addr}")
+    if phone:
+        parts.append(f"tel: {phone}")
+    if with_country and d.get('country'):
+        parts.append(f"country: {d.get('country')}")
+    avail = d.get('availability') or []
+    if avail:
+        hours = ', '.join(
+            f"{e.get('day', '')} {e.get('from', '')}-{e.get('to', '')}"
+            for e in avail
+            if e.get('day')
+        )
+        if hours:
+            parts.append(f"hours: {hours}")
+    if dist is not None:
+        parts.append(f"{dist:.1f} km away")
+    return ' | '.join(p for p in parts if p)
+
+
+def _nearby_contacts(db, collection, user_lat, user_lng, user_country=None,
+                     in_country_limit=10, other_limit=5):
+    """Return (in_country_lines, other_country_lines) for a collection,
+    nearest-first. There is no hard radius cap: results are sorted by distance
+    so the AI can recommend the closest match (equivalent to expanding the
+    search radius until something is found). Entries are split by whether their
+    country matches the user's country so the AI can offer a cross-border
+    fallback when nothing is available locally."""
     docs = list(db[collection].find())
-    scored = []
-    for d in docs:
-        lat = d.get('latitude')
-        lng = d.get('longitude')
-        if user_lat is not None and user_lng is not None and lat is not None and lng is not None:
+
+    def _dist(d):
+        lat, lng = d.get('latitude'), d.get('longitude')
+        if (user_lat is not None and user_lng is not None
+                and lat is not None and lng is not None):
             try:
-                dist = _haversine_km(float(user_lat), float(user_lng), float(lat), float(lng))
+                return _haversine_km(float(user_lat), float(user_lng),
+                                     float(lat), float(lng))
             except (TypeError, ValueError):
-                dist = None
-        else:
-            dist = None
-        scored.append((dist, d))
+                return None
+        return None
 
-    if user_lat is not None and user_lng is not None:
-        with_dist = [(dist, d) for dist, d in scored if dist is not None and dist <= max_km]
-        with_dist.sort(key=lambda x: x[0])
-        picked = with_dist[:limit]
-    else:
-        picked = [(None, d) for d in docs[:limit]]
+    scored = [(_dist(d), d) for d in docs]
+    have_coords = user_lat is not None and user_lng is not None
 
-    lines = []
-    for dist, d in picked:
-        name = d.get('name', '')
-        addr = d.get('address', '')
-        phone = d.get('phone', '')
-        specialty = d.get('specialty', '')
-        parts = [name]
-        if specialty:
-            parts.append(f"specialty: {specialty}")
-        if addr:
-            parts.append(f"address: {addr}")
-        if phone:
-            parts.append(f"tel: {phone}")
-        if dist is not None:
-            parts.append(f"{dist:.1f} km away")
-        lines.append(' | '.join(parts))
-    return lines
+    if not have_coords:
+        # No user location: just hand over the first few entries, unsorted.
+        in_lines = [_contact_line(None, d) for d in docs[:in_country_limit]]
+        return in_lines, []
+
+    with_dist = [(dist, d) for dist, d in scored if dist is not None]
+    with_dist.sort(key=lambda x: x[0])
+
+    uc = (user_country or '').strip().upper()
+
+    def _same_country(d):
+        dc = (d.get('country') or '').strip().upper()
+        # When we don't know the user's country, treat everything as "local"
+        # so behaviour matches the pre-country version.
+        if not uc:
+            return True
+        # Entries without a country are assumed local (legacy, un-backfilled).
+        return dc == uc or dc == ''
+
+    in_country = [(dist, d) for dist, d in with_dist if _same_country(d)]
+    other_country = [(dist, d) for dist, d in with_dist if not _same_country(d)]
+
+    in_lines = [_contact_line(dist, d) for dist, d in in_country[:in_country_limit]]
+    other_lines = [_contact_line(dist, d, with_country=True)
+                   for dist, d in other_country[:other_limit]]
+    return in_lines, other_lines
 
 # ---------- helpers ----------
 
@@ -564,11 +601,152 @@ def logout(request):
 
 # ---------- OTP ----------
 
+# Per-purpose copy for the OTP email. Falls back to 'verify' for unknown values.
+_OTP_EMAIL_COPY = {
+    'verify': {
+        'subject': 'CareMe — Your verification code',
+        'title': 'Verify your email',
+        'intro': ('Use the verification code below to continue. This keeps your '
+                  'CareMe account safe and secure.'),
+        'action': 'Enter it in the app to continue.',
+    },
+    'change_password': {
+        'subject': 'CareMe — Your password change code',
+        'title': 'Change your password',
+        'intro': ('Use the verification code below to change your password. '
+                  'For your security, this code is required before the change is applied.'),
+        'action': 'Enter it in the app to change your password.',
+    },
+}
+
+
+def _build_otp_email(code, expiry_minutes=10, purpose='verify'):
+    """Return (subject, text_body, html_body) for a CareMe OTP email. The wording
+    adapts to `purpose` (e.g. 'change_password' vs the default email 'verify')."""
+    copy = _OTP_EMAIL_COPY.get(purpose, _OTP_EMAIL_COPY['verify'])
+    subject = copy['subject']
+    text_body = (
+        f"CareMe — {copy['title']}\n\n"
+        f"Your verification code is: {code}\n\n"
+        f"This code expires in {expiry_minutes} minutes. {copy['action']}\n\n"
+        "If you didn't request this code, you can safely ignore this email — "
+        "your account remains secure.\n\n"
+        "— The CareMe Team\n"
+        "This is an automated message, please do not reply."
+    )
+
+    # Render each digit in its own boxed cell for a polished, app-like look.
+    digit_cells = "".join(
+        f'<td style="padding:0 6px;"><div style="font-family:\'Courier New\',monospace;'
+        f'font-size:32px;font-weight:700;color:#2563EB;background:#EFF6FF;'
+        f'border:1px solid #DBEAFE;border-radius:10px;width:48px;height:60px;'
+        f'line-height:60px;text-align:center;">{d}</div></td>'
+        for d in code
+    )
+
+    html_body = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>{copy['title']} — CareMe</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F1F5F9;">
+  <!-- Preheader (hidden) -->
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    Your CareMe code is {code}. It expires in {expiry_minutes} minutes.
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+         style="background-color:#F1F5F9;padding:32px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+               style="max-width:480px;background:#FFFFFF;border-radius:16px;
+                      overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.06);">
+          <!-- Header -->
+          <tr>
+            <td style="background:#2563EB;padding:28px 32px;text-align:center;">
+              <span style="font-family:Arial,Helvetica,sans-serif;font-size:24px;
+                           font-weight:700;color:#FFFFFF;letter-spacing:0.5px;">
+                Care<span style="color:#BFDBFE;">Me</span>
+              </span>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 32px 12px;font-family:Arial,Helvetica,sans-serif;">
+              <h1 style="margin:0 0 8px;font-size:20px;color:#0F172A;font-weight:700;">
+                {copy['title']}
+              </h1>
+              <p style="margin:0;font-size:15px;line-height:1.6;color:#475569;">
+                {copy['intro']}
+              </p>
+            </td>
+          </tr>
+          <!-- Code -->
+          <tr>
+            <td style="padding:24px 32px 8px;" align="center">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>{digit_cells}</tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:4px 32px 28px;" align="center">
+              <p style="margin:0;font-size:13px;color:#64748B;
+                        font-family:Arial,Helvetica,sans-serif;">
+                This code expires in
+                <strong style="color:#0F172A;">{expiry_minutes} minutes</strong>.
+              </p>
+            </td>
+          </tr>
+          <!-- Divider -->
+          <tr>
+            <td style="padding:0 32px;">
+              <div style="border-top:1px solid #E2E8F0;"></div>
+            </td>
+          </tr>
+          <!-- Security note -->
+          <tr>
+            <td style="padding:20px 32px 32px;font-family:Arial,Helvetica,sans-serif;">
+              <p style="margin:0;font-size:13px;line-height:1.6;color:#64748B;">
+                Didn't request this? You can safely ignore this email — your
+                account stays secure and no changes will be made.
+              </p>
+            </td>
+          </tr>
+        </table>
+        <!-- Footer -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+               style="max-width:480px;">
+          <tr>
+            <td style="padding:20px 32px;text-align:center;
+                       font-family:Arial,Helvetica,sans-serif;">
+              <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;">
+                &copy; CareMe. All rights reserved.
+              </p>
+              <p style="margin:0;font-size:12px;color:#94A3B8;">
+                This is an automated message — please do not reply.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+    return subject, text_body, html_body
+
+
 @csrf_exempt
 @require_http_methods(['POST'])
 def send_otp(request):
     data = _parse_body(request)
     email = (data.get('email') or '').strip().lower()
+    purpose = (data.get('purpose') or 'verify').strip()
 
     if not email or not _valid_email(email):
         return JsonResponse({'error': 'Valid email is required'}, status=400)
@@ -589,13 +767,17 @@ def send_otp(request):
     )
 
     try:
-        send_mail(
-            subject='CareMe - Your Verification Code',
-            message=f'Your CareMe verification code is: {code}\n\nThis code expires in 10 minutes.',
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
+        subject, text_body, html_body = _build_otp_email(
+            code, expiry_minutes=10, purpose=purpose)
+        msg = EmailMultiAlternatives(
+            subject=subject,
+            body=text_body,
+            # Show "CareMe" as the sender name instead of the raw email address.
+            from_email=formataddr(('CareMe', settings.DEFAULT_FROM_EMAIL)),
+            to=[email],
         )
+        msg.attach_alternative(html_body, 'text/html')
+        msg.send(fail_silently=False)
     except Exception as e:
         return JsonResponse({'error': f'Failed to send email: {str(e)}'}, status=500)
 
@@ -616,14 +798,14 @@ def verify_otp(request):
     record = db.otp_codes.find_one({'email': email})
 
     if not record:
-        return JsonResponse({'error': 'No OTP found. Please request a new one.'}, status=400)
+        return JsonResponse({'error': "This OTP doesn't exist. Please request a new one."}, status=400)
 
     if datetime.utcnow() > record['expires_at']:
         db.otp_codes.delete_one({'email': email})
-        return JsonResponse({'error': 'OTP has expired. Please request a new one.'}, status=400)
+        return JsonResponse({'error': 'This OTP has expired. Please request a new one.'}, status=400)
 
     if record['code'] != code:
-        return JsonResponse({'error': 'Invalid OTP code.'}, status=400)
+        return JsonResponse({'error': "This OTP doesn't exist. Please request a new one."}, status=400)
 
     # OTP is valid — clean up
     db.otp_codes.delete_one({'email': email})
@@ -679,12 +861,13 @@ def profile(request):
             'address': user.get('address', ''),
             'latitude': user.get('latitude'),
             'longitude': user.get('longitude'),
+            'country': user.get('country', ''),
         })
 
     # PUT - update profile
     data = _parse_body(request)
     updates = {}
-    for field in ('name', 'phone', 'dateOfBirth', 'address', 'latitude', 'longitude'):
+    for field in ('name', 'phone', 'dateOfBirth', 'address', 'latitude', 'longitude', 'country'):
         if field in data:
             updates[field] = data[field]
 
@@ -704,6 +887,7 @@ def profile(request):
         'address': updated.get('address', ''),
         'latitude': updated.get('latitude'),
         'longitude': updated.get('longitude'),
+        'country': updated.get('country', ''),
     })
 
 
@@ -1058,19 +1242,12 @@ def suggest_medication_fields(request):
     if not name:
         return JsonResponse({'error': 'name is required'}, status=400)
 
-    locale = _request_locale(request)
-    lang_clause = (
-        f"Write the values in the user's language (locale code: {locale}). "
-        "If the locale is 'ar' write in Arabic, 'fr' in French, 'es' in Spanish, "
-        "etc. Default to English when the locale is 'en' or unknown."
-    )
-
     prompt = (
         "You are filling a medication form for a patient app. Given the "
         f"medication name \"{name}\", return ONLY a JSON object with keys: "
         "purpose (one short sentence describing what it treats), "
         "sideEffects (comma-separated list of the most common ones).\n"
-        f"{lang_clause}\n"
+        "Write the values in English.\n"
         "Use plain text only, no emojis, no smart quotes, no em-dashes. "
         "If you do not recognise the medication, return both values as empty "
         "strings. Do NOT include any disclaimer or extra text outside the JSON."
@@ -1102,8 +1279,8 @@ def chat_suggest(request):
     Returns {suggestions: ["...", "...", "..."]}.
 
     The completions are short follow-up phrases the user might want to type
-    next. Same language as the user's typed input. We pass a tiny slice of
-    recent chat history so the completions stay on-topic."""
+    next, always in English. We pass a tiny slice of recent chat history so
+    the completions stay on-topic."""
     data = _parse_body(request)
     q = (data.get('q') or '')
     if len(q.strip()) < 2:
@@ -1133,8 +1310,8 @@ def chat_suggest(request):
         f"{history_block}\n\n"
         "Return up to 3 short, natural completions or follow-ups the user "
         "MIGHT want to send next. Each suggestion should be a complete short "
-        "sentence the user can tap to send -- not just the next word. Reply in "
-        "the SAME LANGUAGE as the user's partial message. Stay strictly on "
+        "sentence the user can tap to send -- not just the next word. Always "
+        "write the suggestions in English. Stay strictly on "
         "health, medications, appointments, lab results, symptoms, wellness. "
         "Output ONLY a JSON array of strings, no other text. Example output: "
         "[\"What are the side effects of ibuprofen?\", \"Can I take it with paracetamol?\"]."
@@ -1148,6 +1325,48 @@ def chat_suggest(request):
                 suggestions.append(s.strip())
     _CHAT_SUGGEST_CACHE[cache_key] = (now, suggestions)
     return JsonResponse({'suggestions': suggestions})
+
+
+@csrf_exempt
+@login_required
+@require_http_methods(['POST'])
+def chat_title(request):
+    """Generate a short title summarizing a chat conversation. Body:
+        {history: [{text, isUser}, ...]}
+    Returns {title: "..."}. The title reflects the whole conversation, not
+    just the first message. Empty string on failure so the client keeps its
+    first-message preview."""
+    data = _parse_body(request)
+    history = data.get('history') or []
+
+    lines = []
+    for m in history[-12:]:
+        role = 'User' if m.get('isUser') else 'Assistant'
+        text = (m.get('text') or '').strip()
+        if text:
+            lines.append(f"{role}: {text[:400]}")
+    if not lines:
+        return JsonResponse({'title': ''})
+
+    transcript = "\n".join(lines)
+    prompt = (
+        "Read this conversation between a user and a health assistant and write "
+        "a very short title (3 to 6 words) that summarizes its main topic. "
+        "Base the title on the whole conversation, not only the first message. "
+        "Write it in English, in Title Case, with no surrounding quotes, no "
+        "trailing punctuation, and no emojis. "
+        "Return ONLY a JSON object: {\"title\": \"...\"}.\n\n"
+        f"Conversation:\n{transcript}"
+    )
+    parsed = _gemini_json(prompt, timeout=10) or {}
+    title = ''
+    if isinstance(parsed, dict):
+        title = str(parsed.get('title') or '').strip()
+    # Clean up: drop wrapping quotes and clamp length.
+    title = title.strip().strip('"').strip("'").strip()
+    if len(title) > 60:
+        title = title[:57].rstrip() + '…'
+    return JsonResponse({'title': title})
 
 
 # ---------- Lab Tests ----------
@@ -1291,6 +1510,47 @@ def lab_test_file(request, lab_id):
 
 # ---------- Doctors & Pharmacies (admin-managed directory) ----------
 
+_WEEK_DAYS = [
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+    'Friday', 'Saturday', 'Sunday',
+]
+
+
+def _clean_availability(raw):
+    """Sanitize an availability payload into a list of
+    {day, from, to} dicts, keeping only well-formed weekday + HH:MM ranges."""
+    if not isinstance(raw, list):
+        return []
+    cleaned = []
+    seen_days = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        day = str(item.get('day', '')).strip().capitalize()
+        frm = str(item.get('from', '')).strip()
+        to = str(item.get('to', '')).strip()
+        if day not in _WEEK_DAYS or day in seen_days:
+            continue
+        if not _is_hhmm(frm) or not _is_hhmm(to):
+            continue
+        seen_days.add(day)
+        cleaned.append({'day': day, 'from': frm, 'to': to})
+    # Keep them in weekday order for stable display.
+    cleaned.sort(key=lambda e: _WEEK_DAYS.index(e['day']))
+    return cleaned
+
+
+def _is_hhmm(value):
+    parts = value.split(':')
+    if len(parts) != 2:
+        return False
+    try:
+        h, m = int(parts[0]), int(parts[1])
+    except ValueError:
+        return False
+    return 0 <= h < 24 and 0 <= m < 60
+
+
 def _contact_from_doc(doc):
     return {
         'id': str(doc['_id']),
@@ -1300,6 +1560,8 @@ def _contact_from_doc(doc):
         'latitude': doc.get('latitude'),
         'longitude': doc.get('longitude'),
         'specialty': doc.get('specialty', ''),
+        'country': doc.get('country', ''),
+        'availability': doc.get('availability', []),
     }
 
 
@@ -1325,6 +1587,8 @@ def _contacts_list_create(request, collection_name):
         'phone': phone,
         'latitude': data.get('latitude'),
         'longitude': data.get('longitude'),
+        'country': (data.get('country') or '').strip().upper(),
+        'availability': _clean_availability(data.get('availability')),
         'created_at': datetime.utcnow(),
     }
     if collection_name == 'doctors':
@@ -1475,12 +1739,12 @@ def reactivate_account(request):
     # Verify OTP
     record = db.otp_codes.find_one({'email': email})
     if not record:
-        return JsonResponse({'error': 'No verification code found. Please request a new one.'}, status=400)
+        return JsonResponse({'error': "This OTP doesn't exist. Please request a new one."}, status=400)
     if datetime.utcnow() > record['expires_at']:
         db.otp_codes.delete_one({'email': email})
-        return JsonResponse({'error': 'Verification code has expired. Please request a new one.'}, status=400)
+        return JsonResponse({'error': 'This OTP has expired. Please request a new one.'}, status=400)
     if record['code'] != otp_code:
-        return JsonResponse({'error': 'Invalid verification code.'}, status=400)
+        return JsonResponse({'error': "This OTP doesn't exist. Please request a new one."}, status=400)
     db.otp_codes.delete_one({'email': email})
 
     # Reactivate
@@ -1613,14 +1877,14 @@ def export_data(request):
         return rows
 
     def _apt_rows(source):
-        rows = [['Date', 'Title', 'Time', 'Type', 'Location']]
+        rows = [['Date', 'Title', 'Time', 'Doctor', 'Location']]
         for a in source:
             date_val = _fmt_date(a.get('fullDate')) if a.get('fullDate') else str(a.get('date', ''))
             rows.append([
                 date_val,
                 a.get('title', ''),
                 a.get('time', ''),
-                a.get('type', ''),
+                a.get('doctor', '') or a.get('type', ''),
                 a.get('location', ''),
             ])
         return rows
@@ -1707,9 +1971,9 @@ def _build_chat_contents(user_id, user_message, history, attachment=None, locale
     string). When present, the bytes are attached to the current user turn
     as `inline_data` so Gemini can read the image or document.
 
-    `locale` (default 'en'): the user's app UI language. Used as a fallback
-    hint when the language of the user's message is ambiguous; the system
-    prompt instructs Gemini that the message language always wins."""
+    `locale` is accepted for backwards compatibility but unused: the app is
+    English-only and the system prompt always instructs Gemini to reply in
+    English."""
     db = get_db()
 
     meds = list(db.medications.find({'user_id': user_id}))
@@ -1755,8 +2019,6 @@ def _build_chat_contents(user_id, user_message, history, attachment=None, locale
         return ' | '.join(parts)
 
     context_parts = [SYSTEM_PROMPT]
-
-    context_parts.append(f"\n\nUser UI locale: {locale or 'en'}")
 
     if user:
         context_parts.append(f"\nUser name: {user.get('name', 'Unknown')}")
@@ -1828,20 +2090,40 @@ def _build_chat_contents(user_id, user_message, history, attachment=None, locale
     user_lat = user.get('latitude') if user else None
     user_lng = user.get('longitude') if user else None
     user_addr = user.get('address') if user else None
+    user_country = user.get('country') if user else None
     if user_addr:
         context_parts.append(f"\nUser's address: {user_addr}")
+    if user_country:
+        context_parts.append(f"\nUser's country: {user_country}")
 
-    doctors_nearby = _nearby_contacts(db, 'doctors', user_lat, user_lng, limit=10)
-    pharmacies_nearby = _nearby_contacts(db, 'pharmacies', user_lat, user_lng, limit=5)
-    if doctors_nearby:
+    docs_in, docs_other = _nearby_contacts(
+        db, 'doctors', user_lat, user_lng, user_country,
+        in_country_limit=10, other_limit=5)
+    pharm_in, pharm_other = _nearby_contacts(
+        db, 'pharmacies', user_lat, user_lng, user_country,
+        in_country_limit=10, other_limit=5)
+
+    if docs_in:
         context_parts.append(
-            "\nNearby doctors (admin-curated, sorted by proximity):\n- "
-            + "\n- ".join(doctors_nearby)
+            "\nNearby doctors in the user's country (sorted nearest-first):\n- "
+            + "\n- ".join(docs_in)
         )
-    if pharmacies_nearby:
+    if docs_other:
         context_parts.append(
-            "\nNearby pharmacies (admin-curated, sorted by proximity):\n- "
-            + "\n- ".join(pharmacies_nearby)
+            "\nDoctors in OTHER countries (only offer these if none in the user's "
+            "country match, and only after the user agrees to search abroad):\n- "
+            + "\n- ".join(docs_other)
+        )
+    if pharm_in:
+        context_parts.append(
+            "\nNearby pharmacies in the user's country (sorted nearest-first):\n- "
+            + "\n- ".join(pharm_in)
+        )
+    if pharm_other:
+        context_parts.append(
+            "\nPharmacies in OTHER countries (only offer these if none in the "
+            "user's country, and only after the user agrees to search abroad):\n- "
+            + "\n- ".join(pharm_other)
         )
 
     system_context = ''.join(context_parts)

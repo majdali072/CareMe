@@ -80,6 +80,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
     final phoneCtrl = PhoneInputController();
     final formKey = GlobalKey<FormState>();
     SelectedLocation? pickedLocation;
+    final List<AvailabilityEntry> availability = [];
 
     showDialog(
       context: context,
@@ -187,6 +188,15 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                           label: AppLocalizations.of(context).t('edit_profile_phone_label'),
                           hint: AppLocalizations.of(context).t('admin_phone_hint'),
                         ),
+                        const SizedBox(height: 16),
+                        _AvailabilityEditor(
+                          initial: availability,
+                          onChanged: (list) {
+                            availability
+                              ..clear()
+                              ..addAll(list);
+                          },
+                        ),
                         const SizedBox(height: 28),
 
                         // Submit
@@ -228,6 +238,22 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                                   );
                                   return;
                                 }
+                                // Reject any day whose closing time is not
+                                // after its opening time.
+                                final badDay = availability.firstWhere(
+                                  (e) => e.from.compareTo(e.to) >= 0,
+                                  orElse: () => AvailabilityEntry(
+                                      day: '', from: '', to: ''),
+                                );
+                                if (badDay.day.isNotEmpty) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(
+                                        content: Text(AppLocalizations.of(context).t(
+                                            'admin_availability_closes_before_opens',
+                                            {'day': badDay.day}))),
+                                  );
+                                  return;
+                                }
                                 final draft = ContactEntry(
                                   name: nameCtrl.text.trim(),
                                   address: pickedLocation!.address,
@@ -235,6 +261,8 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                                   latitude: pickedLocation!.latitude,
                                   longitude: pickedLocation!.longitude,
                                   specialty: isDoctor ? specialtyCtrl.text.trim() : '',
+                                  country: pickedLocation!.country ?? '',
+                                  availability: List.of(availability),
                                 );
                                 try {
                                   final saved = isDoctor
@@ -620,6 +648,27 @@ class _ContactCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (entry.availability.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.access_time,
+                          size: 13, color: Color(0xFF94A3B8)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          entry.availability
+                              .map((e) => '${e.day} ${e.from}–${e.to}')
+                              .join(' · '),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary(context)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -695,6 +744,272 @@ class _FormField extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Availability Editor ──────────────────────────────────────────────────
+// Mirrors the medication day/time schedule pattern, but each day stores a
+// single "from – to" opening window instead of a list of exact times.
+class _AvailabilityEditor extends StatefulWidget {
+  final List<AvailabilityEntry> initial;
+  final ValueChanged<List<AvailabilityEntry>> onChanged;
+
+  const _AvailabilityEditor({required this.initial, required this.onChanged});
+
+  @override
+  State<_AvailabilityEditor> createState() => _AvailabilityEditorState();
+}
+
+class _AvailabilityEditorState extends State<_AvailabilityEditor> {
+  late List<AvailabilityEntry> _entries;
+
+  static const List<String> _weekDays = [
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+    'Friday', 'Saturday', 'Sunday'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = widget.initial
+        .map((e) => AvailabilityEntry(day: e.day, from: e.from, to: e.to))
+        .toList();
+  }
+
+  void _emit() => widget.onChanged(_entries);
+
+  Future<String?> _pickTime(String current) async {
+    TimeOfDay initial = TimeOfDay.now();
+    final parts = current.split(':');
+    if (parts.length == 2) {
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h != null && m != null) initial = TimeOfDay(hour: h, minute: m);
+    }
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: Color(0xFF2563EB),
+            onPrimary: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null) return null;
+    return '${picked.hour.toString().padLeft(2, '0')}:'
+        '${picked.minute.toString().padLeft(2, '0')}';
+  }
+
+  void _addDay() {
+    final used = _entries.map((e) => e.day).toSet();
+    final available = _weekDays.where((d) => !used.contains(d)).toList();
+    if (available.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(AppLocalizations.of(context).t('admin_availability_choose_day')),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: available
+              .map((day) => ListTile(
+                    title: Text(day),
+                    onTap: () {
+                      setState(() {
+                        _entries.add(AvailabilityEntry(
+                            day: day, from: '09:00', to: '17:00'));
+                        _entries.sort((a, b) => _weekDays
+                            .indexOf(a.day)
+                            .compareTo(_weekDays.indexOf(b.day)));
+                      });
+                      _emit();
+                      Navigator.pop(context);
+                    },
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              t.t('admin_availability_label'),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary(context),
+              ),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: _entries.length >= _weekDays.length ? null : _addDay,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.tint(context),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add, size: 14, color: AppColors.accent(context)),
+                    const SizedBox(width: 4),
+                    Text(
+                      t.t('admin_availability_add_day'),
+                      style: TextStyle(
+                        color: AppColors.accent(context),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_entries.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt(context),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border(context)),
+            ),
+            child: Text(
+              t.t('admin_availability_none'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textMuted(context), fontSize: 13),
+            ),
+          )
+        else
+          ..._entries.asMap().entries.map((e) => _dayRow(e.key, e.value)),
+      ],
+    );
+  }
+
+  Widget _dayRow(int idx, AvailabilityEntry entry) {
+    final t = AppLocalizations.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border(context)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.calendar_today, size: 14, color: Color(0xFF2563EB)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 78,
+            child: Text(
+              entry.day,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: AppColors.textPrimary(context),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _timeChip(
+                    label: t.t('admin_availability_from'),
+                    value: entry.from,
+                    onTap: () async {
+                      final picked = await _pickTime(entry.from);
+                      if (picked != null) {
+                        setState(() => entry.from = picked);
+                        _emit();
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text('–',
+                    style: TextStyle(color: AppColors.textMuted(context))),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _timeChip(
+                    label: t.t('admin_availability_to'),
+                    value: entry.to,
+                    onTap: () async {
+                      final picked = await _pickTime(entry.to);
+                      if (picked != null) {
+                        setState(() => entry.to = picked);
+                        _emit();
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: () {
+              setState(() => _entries.removeAt(idx));
+              _emit();
+            },
+            child: const Icon(Icons.delete_outline,
+                size: 18, color: Color(0xFF9CA3AF)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timeChip({
+    required String label,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        decoration: BoxDecoration(
+          color: AppColors.surface(context),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.access_time, size: 13, color: Color(0xFF2563EB)),
+            const SizedBox(width: 4),
+            Text(
+              value.isEmpty ? label : value,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1D4ED8),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

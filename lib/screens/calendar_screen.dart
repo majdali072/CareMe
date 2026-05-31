@@ -190,8 +190,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary(context),
                           fontSize: 15)),
-                  if (apt.type.isNotEmpty)
-                    Text(apt.type,
+                  if (apt.doctor.isNotEmpty || apt.type.isNotEmpty)
+                    Text(apt.doctor.isNotEmpty ? apt.doctor : apt.type,
                         style: TextStyle(
                             color: AppColors.textSecondary(context),
                             fontSize: 13)),

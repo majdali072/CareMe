@@ -21,6 +21,11 @@ class OTPVerificationScreen extends StatefulWidget {
   /// already issued the code through a different path.
   final Future<void> Function()? onSendOtp;
 
+  /// Why the OTP is being sent (e.g. 'change_password'). Forwarded to the
+  /// backend so the email wording matches the action. Defaults to email
+  /// verification when null.
+  final String? purpose;
+
   const OTPVerificationScreen({
     super.key,
     this.verificationType = 'email',
@@ -28,6 +33,7 @@ class OTPVerificationScreen extends StatefulWidget {
     required this.onVerify,
     this.skipBackendVerify = false,
     this.onSendOtp,
+    this.purpose,
   });
 
   @override
@@ -64,7 +70,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       if (widget.onSendOtp != null) {
         await widget.onSendOtp!();
       } else {
-        await ApiService.sendOtp(widget.contactInfo);
+        await ApiService.sendOtp(widget.contactInfo, purpose: widget.purpose);
       }
       if (mounted) setState(() => _isSending = false);
     } on ApiException catch (e) {

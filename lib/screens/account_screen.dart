@@ -131,6 +131,7 @@ class _AccountScreenState extends State<AccountScreen> {
   String _address = '';
   double? _latitude;
   double? _longitude;
+  String? _country;
   Uint8List? _profilePhoto;
 
   TextEditingController? _editNameCtrl;
@@ -165,6 +166,7 @@ class _AccountScreenState extends State<AccountScreen> {
             address: _address,
             latitude: _latitude,
             longitude: _longitude,
+            country: _country,
           );
     setState(() => _showEditProfile = true);
   }
@@ -216,6 +218,7 @@ class _AccountScreenState extends State<AccountScreen> {
         _address = data['address'] ?? '';
         _latitude = (data['latitude'] as num?)?.toDouble();
         _longitude = (data['longitude'] as num?)?.toDouble();
+        _country = data['country'] as String?;
         _isLoading = false;
       });
     } catch (e) {
@@ -613,11 +616,27 @@ class _AccountScreenState extends State<AccountScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: _pickProfileImage,
-                        child: Text(AppLocalizations.of(context).t('edit_profile_change_picture'),
-                            style: const TextStyle(
-                                color: Color(0xFF2563EB), fontSize: 12)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          GestureDetector(
+                            onTap: _pickProfileImage,
+                            child: Text(AppLocalizations.of(context).t('edit_profile_change_picture'),
+                                style: const TextStyle(
+                                    color: Color(0xFF2563EB), fontSize: 12)),
+                          ),
+                          if (_profilePhoto != null) ...[
+                            Text('   •   ',
+                                style: TextStyle(
+                                    color: AppColors.textMuted(context), fontSize: 12)),
+                            GestureDetector(
+                              onTap: _removeProfileImage,
+                              child: Text(AppLocalizations.of(context).t('edit_profile_remove_picture'),
+                                  style: const TextStyle(
+                                      color: Color(0xFFDC2626), fontSize: 12)),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -660,10 +679,12 @@ class _AccountScreenState extends State<AccountScreen> {
                                 address: _editLocation?.address ?? '',
                                 latitude: _editLocation?.latitude,
                                 longitude: _editLocation?.longitude,
+                                country: _editLocation?.country,
                               );
                               final savedAddress = _editLocation?.address ?? '';
                               final savedLat = _editLocation?.latitude;
                               final savedLng = _editLocation?.longitude;
+                              final savedCountry = _editLocation?.country;
                               final savedName = nameCtrl.text;
                               final savedDob = dobCtrl.text;
                               _disposeEditControllers();
@@ -674,6 +695,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                 _address = savedAddress;
                                 _latitude = savedLat;
                                 _longitude = savedLng;
+                                _country = savedCountry;
                                 _showEditProfile = false;
                                 _isSaving = false;
                               });
@@ -756,6 +778,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 'time': a.time,
                 'type': a.type,
                 'location': a.location,
+                'doctor': a.doctor,
               })
           .toList();
 
@@ -1530,6 +1553,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         builder: (_) => OTPVerificationScreen(
                           verificationType: 'email',
                           contactInfo: _email,
+                          purpose: 'change_password',
                           onVerify: (otp) {
                             Navigator.pop(context);
                             Navigator.push(

@@ -25,10 +25,6 @@ import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Snap the app's locale to either English or Arabic before the first
-  // build so the picked-up translations match the OS language on first run.
-  await LocaleController.instance.init();
-  debugAssertTranslationsComplete();
   runApp(const CareMeApp());
 }
 
@@ -594,12 +590,18 @@ class _AppRootState extends State<AppRoot> {
     }
 
     if (_isAdmin) {
-      return Scaffold(
-        body: Stack(children: [
-          if (_currentPage == 'controller') const AdminControllerScreen(),
-          if (_currentPage == 'settings') AdminSettingsScreen(onLogout: _handleLogout),
-          Positioned(bottom: 0, left: 0, right: 0, child: AdminBottomNav(currentPage: _currentPage, onNavigate: _navigate)),
-        ]),
+      return PopScope(
+        canPop: _currentPage == 'controller',
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _navigate('controller');
+        },
+        child: Scaffold(
+          body: Stack(children: [
+            if (_currentPage == 'controller') const AdminControllerScreen(),
+            if (_currentPage == 'settings') AdminSettingsScreen(onLogout: _handleLogout),
+            Positioned(bottom: 0, left: 0, right: 0, child: AdminBottomNav(currentPage: _currentPage, onNavigate: _navigate)),
+          ]),
+        ),
       );
     }
 
@@ -607,26 +609,34 @@ class _AppRootState extends State<AppRoot> {
     // sit above the bottom nav consistently across devices.
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
-    return Scaffold(
-      body: Stack(children: [
-        Positioned.fill(child: _buildPage()),
-        Positioned(
-          bottom: 0, left: 0, right: 0,
-          child: BottomNav(currentPage: _currentPage, onNavigate: _navigate),
-        ),
-        if (_currentPage != 'chatbot' && _currentPage != 'account')
-          PositionedDirectional(
-            bottom: 96 + bottomInset,
-            end: 16,
-            child: FloatingButtons(
-              currentPage: _currentPage,
-              onAddMedication: _openAddMedication,
-              onAddLabTest: _openAddLabTest,
-              onAddSchedule: _openAddSchedule,
-              onOpenChatbot: () => _navigate('chatbot'),
-            ),
+    return PopScope(
+      // On the home tab, allow the OS to handle back (exit/minimize the app).
+      // On any other tab, intercept back and return to the home tab.
+      canPop: _currentPage == 'home',
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _navigate('home');
+      },
+      child: Scaffold(
+        body: Stack(children: [
+          Positioned.fill(child: _buildPage()),
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: BottomNav(currentPage: _currentPage, onNavigate: _navigate),
           ),
-      ]),
+          if (_currentPage != 'chatbot' && _currentPage != 'account')
+            PositionedDirectional(
+              bottom: 96 + bottomInset,
+              end: 16,
+              child: FloatingButtons(
+                currentPage: _currentPage,
+                onAddMedication: _openAddMedication,
+                onAddLabTest: _openAddLabTest,
+                onAddSchedule: _openAddSchedule,
+                onOpenChatbot: () => _navigate('chatbot'),
+              ),
+            ),
+        ]),
+      ),
     );
   }
 }

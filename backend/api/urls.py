@@ -33,4 +33,5 @@ urlpatterns = [
     path('chat/', views.chat),
     path('chat/stream/', views.chat_stream),
     path('chat/suggest/', views.chat_suggest),
+    path('chat/title/', views.chat_title),
 ]

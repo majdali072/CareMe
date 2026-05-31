@@ -288,11 +288,14 @@ class ApiService {
 
   // ---------- OTP ----------
 
-  static Future<void> sendOtp(String email) async {
+  static Future<void> sendOtp(String email, {String? purpose}) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/auth/send-otp/'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email}),
+      body: jsonEncode({
+        'email': email,
+        if (purpose != null) 'purpose': purpose,
+      }),
     );
 
     final data = jsonDecode(response.body);
@@ -354,6 +357,7 @@ class ApiService {
     String? address,
     double? latitude,
     double? longitude,
+    String? country,
   }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
@@ -362,6 +366,7 @@ class ApiService {
     if (address != null) body['address'] = address;
     if (latitude != null) body['latitude'] = latitude;
     if (longitude != null) body['longitude'] = longitude;
+    if (country != null) body['country'] = country;
 
     final response = await _authenticatedRequest(() => http.put(
       Uri.parse('$_baseUrl/users/profile/'),
@@ -481,6 +486,27 @@ class ApiService {
       return const [];
     } catch (_) {
       return const [];
+    }
+  }
+
+  /// Ask the AI for a short title summarizing a chat conversation.
+  /// Returns an empty string on any failure so the caller keeps the existing
+  /// (first-message) preview title.
+  static Future<String> generateChatTitle(
+    List<Map<String, dynamic>> history,
+  ) async {
+    if (history.isEmpty) return '';
+    try {
+      final response = await _authenticatedRequest(() => http.post(
+            Uri.parse('$_baseUrl/chat/title/'),
+            headers: _headers,
+            body: jsonEncode({'history': history}),
+          ));
+      if (response.statusCode != 200) return '';
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return (data['title'] ?? '').toString().trim();
+    } catch (_) {
+      return '';
     }
   }
 
@@ -861,6 +887,27 @@ class ApiService {
   }
 }
 
+/// A single day's opening window for a doctor or pharmacy, e.g.
+/// {day: "Monday", from: "09:00", to: "17:00"}. Mirrors the medication
+/// schedule pattern (day + times) but stores a from–till range instead of
+/// individual times.
+class AvailabilityEntry {
+  final String day;
+  String from; // HH:MM (24h)
+  String to; // HH:MM (24h)
+
+  AvailabilityEntry({required this.day, required this.from, required this.to});
+
+  factory AvailabilityEntry.fromJson(Map<String, dynamic> json) =>
+      AvailabilityEntry(
+        day: json['day'] as String? ?? '',
+        from: json['from'] as String? ?? '',
+        to: json['to'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {'day': day, 'from': from, 'to': to};
+}
+
 class ContactEntry {
   final String? id;
   final String name;
@@ -869,6 +916,8 @@ class ContactEntry {
   final double? latitude;
   final double? longitude;
   final String specialty;
+  final String country;
+  final List<AvailabilityEntry> availability;
 
   ContactEntry({
     this.id,
@@ -878,6 +927,8 @@ class ContactEntry {
     this.latitude,
     this.longitude,
     this.specialty = '',
+    this.country = '',
+    this.availability = const [],
   });
 
   factory ContactEntry.fromJson(Map<String, dynamic> json) => ContactEntry(
@@ -888,6 +939,12 @@ class ContactEntry {
         latitude: (json['latitude'] as num?)?.toDouble(),
         longitude: (json['longitude'] as num?)?.toDouble(),
         specialty: json['specialty'] ?? '',
+        country: json['country'] ?? '',
+        availability: ((json['availability'] as List?) ?? [])
+            .whereType<Map>()
+            .map((e) =>
+                AvailabilityEntry.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -897,6 +954,9 @@ class ContactEntry {
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,
         if (specialty.isNotEmpty) 'specialty': specialty,
+        if (country.isNotEmpty) 'country': country,
+        if (availability.isNotEmpty)
+          'availability': availability.map((e) => e.toJson()).toList(),
       };
 }
 

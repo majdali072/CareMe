@@ -11,28 +11,34 @@ class SelectedLocation {
   final String address;
   final double latitude;
   final double longitude;
+  /// ISO 3166-1 alpha-2 country code (e.g. "LB"), derived from the geocoder.
+  final String? country;
 
   const SelectedLocation({
     required this.address,
     required this.latitude,
     required this.longitude,
+    this.country,
   });
 
   Map<String, dynamic> toJson() => {
         'address': address,
         'latitude': latitude,
         'longitude': longitude,
+        if (country != null && country!.isNotEmpty) 'country': country,
       };
 
   factory SelectedLocation.fromParts({
     required String address,
     double? latitude,
     double? longitude,
+    String? country,
   }) {
     return SelectedLocation(
       address: address,
       latitude: latitude ?? 0.0,
       longitude: longitude ?? 0.0,
+      country: country,
     );
   }
 
@@ -149,6 +155,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   LatLng? _pin;
   bool _busy = false;
   String? _error;
+  String? _country;
 
   String get _address => _addressCtrl.text.trim();
 
@@ -156,6 +163,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   void initState() {
     super.initState();
     final init = widget.initial;
+    _country = init?.country;
     if (init != null && init.hasCoords) {
       _pin = LatLng(init.latitude, init.longitude);
       _addressCtrl.text = init.address;
@@ -215,6 +223,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       if (!mounted) return;
       setState(() {
         if (result.address != null) _addressCtrl.text = result.address!;
+        if (result.country != null) _country = result.country;
         _busy = false;
       });
     } catch (e) {
@@ -266,6 +275,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         _error = result.error ??
             AppLocalizations.of(context).t('loc_pin_resolve_failed');
       }
+      if (result.country != null) _country = result.country;
       _busy = false;
     });
   }
@@ -291,6 +301,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       setState(() {
         _pin = latLng;
         _addressCtrl.text = reverse.address ?? query;
+        if (reverse.country != null) _country = reverse.country;
         _busy = false;
       });
       final ctrl = await _mapController.future;
@@ -314,7 +325,12 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         return _GeocodeResult(
             error: AppLocalizations.of(context).t('loc_pin_no_address'));
       }
-      return _GeocodeResult(address: _formatPlacemark(places.first));
+      final p = places.first;
+      final iso = (p.isoCountryCode ?? '').trim();
+      return _GeocodeResult(
+        address: _formatPlacemark(p),
+        country: iso.isNotEmpty ? iso.toUpperCase() : null,
+      );
     } catch (e) {
       return _GeocodeResult(
           error: AppLocalizations.of(context)
@@ -357,6 +373,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       address: _address,
       latitude: _pin!.latitude,
       longitude: _pin!.longitude,
+      country: _country,
     ));
   }
 
@@ -564,6 +581,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
 class _GeocodeResult {
   final String? address;
+  final String? country;
   final String? error;
-  const _GeocodeResult({this.address, this.error});
+  const _GeocodeResult({this.address, this.country, this.error});
 }

@@ -22,6 +22,7 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
 
   String? _pickedFileName;
   Uint8List? _pickedFileBytes;
+  String? _error;
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
@@ -38,7 +39,11 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
   }
 
   void _submit() {
-    if (_nameCtrl.text.isEmpty || _dateCtrl.text.isEmpty || _doctorCtrl.text.isEmpty) return;
+    if (_nameCtrl.text.trim().isEmpty || _dateCtrl.text.trim().isEmpty) {
+      setState(() => _error =
+          AppLocalizations.of(context).t('dlg_lab_validation_required'));
+      return;
+    }
     final fileName = _pickedFileName ?? '${_nameCtrl.text.replaceAll(' ', '_')}.pdf';
     widget.onAdd(
       LabTest(name: _nameCtrl.text, date: _dateCtrl.text, doctor: _doctorCtrl.text, fileName: fileName),
@@ -72,11 +77,11 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  _field(AppLocalizations.of(context).t('dlg_lab_name_label'),
+                  _field('${AppLocalizations.of(context).t('dlg_lab_name_label')} *',
                       _nameCtrl, AppLocalizations.of(context).t('dlg_lab_name_hint')),
                   const SizedBox(height: 14),
                   _datePickerField(
-                      AppLocalizations.of(context).t('dlg_lab_date_label'), _dateCtrl),
+                      '${AppLocalizations.of(context).t('dlg_lab_date_label')} *', _dateCtrl),
                   const SizedBox(height: 14),
                   _field(AppLocalizations.of(context).t('dlg_lab_ordered_by'),
                       _doctorCtrl, AppLocalizations.of(context).t('dlg_lab_doctor_name_hint')),
@@ -136,6 +141,21 @@ class _AddLabTestDialogState extends State<AddLabTestDialog> {
                       ),
                     ],
                   ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.error_outline,
+                            color: Color(0xFFDC2626), size: 18),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(_error!,
+                              style: const TextStyle(
+                                  color: Color(0xFFDC2626), fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,

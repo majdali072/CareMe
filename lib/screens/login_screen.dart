@@ -587,6 +587,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     builder: (_) => OTPVerificationScreen(
                                       verificationType: 'email',
                                       contactInfo: _emailCtrl.text.trim(),
+                                      purpose: 'change_password',
                                       onVerify: (otp) {
                                         Navigator.pop(context);
                                         ScaffoldMessenger.of(context)

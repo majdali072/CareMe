@@ -65,9 +65,21 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '').replace(' ', '')
 DEFAULT_FROM_EMAIL = os.environ.get('EMAIL_HOST_USER', 'noreply@careme.app')
 
-# Field-level encryption for health data
-# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Field-level encryption for health data.
+#
+# Production (most secure): AWS KMS envelope encryption. Store the data key only
+# in KMS-wrapped form in FIELD_ENCRYPTION_KEY_CIPHERTEXT; KMS holds the master
+# key. Wrap an existing/new key with: python manage.py wrap_encryption_key
+# Both vars accept a comma-separated list (newest first) to support rotation.
+#
+# Local/dev fallback: a plaintext key in FIELD_ENCRYPTION_KEY. Generate one with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 FIELD_ENCRYPTION_KEY = os.environ.get('FIELD_ENCRYPTION_KEY', '')
+FIELD_ENCRYPTION_KEY_CIPHERTEXT = os.environ.get('FIELD_ENCRYPTION_KEY_CIPHERTEXT', '')
+
+# AWS KMS (Key Encryption Key that wraps the field-encryption data key)
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+KMS_KEY_ID = os.environ.get('KMS_KEY_ID', '')  # key id, ARN, or alias/<name>
 
 # Google Gemini API
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')

@@ -15,20 +15,45 @@ class EditAppointmentDialog extends StatefulWidget {
 
 class _EditAppointmentDialogState extends State<EditAppointmentDialog> {
   late final TextEditingController _titleCtrl;
-  late final TextEditingController _typeCtrl;
+  late final TextEditingController _doctorCtrl;
   late final TextEditingController _timeCtrl;
   late final TextEditingController _locationCtrl;
   late final TextEditingController _dateCtrl;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     final a = widget.appointment;
-    _titleCtrl = TextEditingController(text: a.title);
-    _typeCtrl = TextEditingController(text: a.type);
+    // Title and appointment type were merged into a single field; fall back to
+    // the legacy type when an older entry only had a type.
+    _titleCtrl = TextEditingController(
+        text: a.title.isNotEmpty ? a.title : a.type);
+    _doctorCtrl = TextEditingController(text: a.doctor);
     _timeCtrl = TextEditingController(text: a.time);
     _locationCtrl = TextEditingController(text: a.location);
     _dateCtrl = TextEditingController(text: a.date.toString());
+  }
+
+  void _save() {
+    if (_titleCtrl.text.trim().isEmpty ||
+        _doctorCtrl.text.trim().isEmpty ||
+        _locationCtrl.text.trim().isEmpty ||
+        _dateCtrl.text.trim().isEmpty ||
+        _timeCtrl.text.trim().isEmpty) {
+      setState(() => _error =
+          AppLocalizations.of(context).t('dlg_sched_validation_required'));
+      return;
+    }
+    widget.onSave(widget.appointment.copyWith(
+      title: _titleCtrl.text,
+      type: '',
+      doctor: _doctorCtrl.text,
+      time: _timeCtrl.text,
+      location: _locationCtrl.text,
+      date: int.tryParse(_dateCtrl.text) ?? widget.appointment.date,
+    ));
+    Navigator.pop(context);
   }
 
   @override
@@ -55,29 +80,33 @@ class _EditAppointmentDialogState extends State<EditAppointmentDialog> {
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    _field(AppLocalizations.of(context).t('dlg_schedule_title_label'), _titleCtrl),
+                    _field('${AppLocalizations.of(context).t('dlg_sched_appointment_field')} *', _titleCtrl),
                     const SizedBox(height: 12),
-                    _field(AppLocalizations.of(context).t('dlg_edit_appt_type'), _typeCtrl),
+                    _field('${AppLocalizations.of(context).t('dlg_sched_doctor')} *', _doctorCtrl),
                     const SizedBox(height: 12),
-                    _field(AppLocalizations.of(context).t('dlg_edit_appt_date_day'), _dateCtrl, keyboardType: TextInputType.number),
+                    _field('${AppLocalizations.of(context).t('dlg_edit_appt_date_day')} *', _dateCtrl, keyboardType: TextInputType.number),
                     const SizedBox(height: 12),
-                    _field(AppLocalizations.of(context).t('dlg_schedule_time_label'), _timeCtrl),
+                    _field('${AppLocalizations.of(context).t('dlg_schedule_time_label')} *', _timeCtrl),
                     const SizedBox(height: 12),
-                    _field(AppLocalizations.of(context).t('dlg_schedule_location_label'), _locationCtrl),
+                    _field('${AppLocalizations.of(context).t('dlg_schedule_location_label')} *', _locationCtrl),
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 18),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(_error!,
+                                style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () {
-                          widget.onSave(widget.appointment.copyWith(
-                            title: _titleCtrl.text,
-                            type: _typeCtrl.text,
-                            time: _timeCtrl.text,
-                            location: _locationCtrl.text,
-                            date: int.tryParse(_dateCtrl.text) ?? widget.appointment.date,
-                          ));
-                          Navigator.pop(context);
-                        },
+                        onPressed: _save,
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           backgroundColor: const Color(0xFF2563EB),
