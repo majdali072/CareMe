@@ -243,6 +243,35 @@ class Appointment {
       googleEventId: googleEventId ?? this.googleEventId,
     );
   }
+
+  /// Serialize for local persistence (so appointments survive app restarts and
+  /// Google Calendar sign-in, which can recreate the activity).
+  Map<String, dynamic> toJson() => {
+        'date': date,
+        'fullDate': fullDate?.toIso8601String(),
+        'title': title,
+        'time': time,
+        'type': type,
+        'location': location,
+        'doctor': doctor,
+        'googleEventId': googleEventId,
+      };
+
+  factory Appointment.fromJson(Map<String, dynamic> json) {
+    final fullDate = (json['fullDate'] is String)
+        ? DateTime.tryParse(json['fullDate'] as String)
+        : null;
+    return Appointment(
+      date: (json['date'] as int?) ?? fullDate?.day ?? 1,
+      fullDate: fullDate,
+      title: json['title']?.toString() ?? '',
+      time: json['time']?.toString() ?? '',
+      type: json['type']?.toString() ?? '',
+      location: json['location']?.toString() ?? '',
+      doctor: json['doctor']?.toString() ?? '',
+      googleEventId: json['googleEventId']?.toString(),
+    );
+  }
 }
 
 class ChatMessage {

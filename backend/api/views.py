@@ -247,7 +247,8 @@ SYSTEM_PROMPT = (
     "Rules for the action block:\n"
     "(a) The JSON must be valid and use straight quotes.\n"
     "(b) Fill in only the fields the user actually specified plus the schedule/prn/lifetime flags you "
-    "    inferred from their wording per the rules above; leave free-text fields you have no info for "
+    "    inferred from their wording per the rules "
+    "above; leave free-text fields you have no info for "
     "    as empty strings, do NOT invent values.\n"
     "(c) Date format YYYY-MM-DD, time format 24-hour HH:MM.\n"
     "(d) Emit AT MOST one action block per reply, and ONLY in Phase 2 (or directly when the user's "
@@ -1612,6 +1613,34 @@ def _contacts_detail(request, collection_name, item_id):
             return JsonResponse({'error': 'Not found'}, status=404)
         return JsonResponse({'message': 'Deleted'})
 
+    if request.method in ('PUT', 'PATCH'):
+        data = _parse_body(request)
+        name = (data.get('name') or '').strip()
+        address = (data.get('address') or '').strip()
+        phone = (data.get('phone') or '').strip()
+        if not name or not address or not phone:
+            return JsonResponse(
+                {'error': 'name, address, and phone are required'}, status=400)
+
+        update = {
+            'name': name,
+            'address': address,
+            'phone': phone,
+            'latitude': data.get('latitude'),
+            'longitude': data.get('longitude'),
+            'country': (data.get('country') or '').strip().upper(),
+            'availability': _clean_availability(data.get('availability')),
+            'updated_at': datetime.utcnow(),
+        }
+        if collection_name == 'doctors':
+            update['specialty'] = (data.get('specialty') or '').strip()
+
+        result = coll.update_one({'_id': obj_id}, {'$set': update})
+        if result.matched_count == 0:
+            return JsonResponse({'error': 'Not found'}, status=404)
+        doc = coll.find_one({'_id': obj_id})
+        return JsonResponse(_contact_from_doc(doc))
+
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
@@ -1625,7 +1654,7 @@ def doctors(request):
 
 @csrf_exempt
 @admin_required
-@require_http_methods(['DELETE'])
+@require_http_methods(['DELETE', 'PUT', 'PATCH'])
 def doctor_detail(request, doctor_id):
     return _contacts_detail(request, 'doctors', doctor_id)
 
@@ -1640,7 +1669,7 @@ def pharmacies(request):
 
 @csrf_exempt
 @admin_required
-@require_http_methods(['DELETE'])
+@require_http_methods(['DELETE', 'PUT', 'PATCH'])
 def pharmacy_detail(request, pharmacy_id):
     return _contacts_detail(request, 'pharmacies', pharmacy_id)
 

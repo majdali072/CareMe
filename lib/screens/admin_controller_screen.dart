@@ -73,14 +73,30 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
     }
   }
 
-  // ── Add Dialog ───────────────────────────────────────────────────────────
-  void _showAddDialog({required bool isDoctor}) {
-    final nameCtrl = TextEditingController();
-    final specialtyCtrl = TextEditingController();
-    final phoneCtrl = PhoneInputController();
+  // ── Add / Edit Dialog ────────────────────────────────────────────────────
+  // When [existing] is non-null the dialog runs in edit mode: fields are
+  // pre-filled and submitting updates the entry instead of creating one.
+  void _showAddDialog({required bool isDoctor, ContactEntry? existing}) {
+    final isEdit = existing != null;
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final specialtyCtrl =
+        TextEditingController(text: existing?.specialty ?? '');
+    final phoneCtrl = _phoneControllerFor(existing?.phone);
     final formKey = GlobalKey<FormState>();
-    SelectedLocation? pickedLocation;
-    final List<AvailabilityEntry> availability = [];
+    SelectedLocation? pickedLocation = existing != null
+        ? SelectedLocation.fromParts(
+            address: existing.address,
+            latitude: existing.latitude,
+            longitude: existing.longitude,
+            country: existing.country.isNotEmpty ? existing.country : null,
+          )
+        : null;
+    final List<AvailabilityEntry> availability = existing != null
+        ? existing.availability
+            .map((e) =>
+                AvailabilityEntry(day: e.day, from: e.from, to: e.to))
+            .toList()
+        : [];
 
     showDialog(
       context: context,
@@ -113,9 +129,13 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        isDoctor
-                            ? AppLocalizations.of(context).t('admin_add_doctor')
-                            : AppLocalizations.of(context).t('admin_add_pharmacy'),
+                        isEdit
+                            ? (isDoctor
+                                ? AppLocalizations.of(context).t('admin_edit_doctor')
+                                : AppLocalizations.of(context).t('admin_edit_pharmacy'))
+                            : (isDoctor
+                                ? AppLocalizations.of(context).t('admin_add_doctor')
+                                : AppLocalizations.of(context).t('admin_add_pharmacy')),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -255,6 +275,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                                   return;
                                 }
                                 final draft = ContactEntry(
+                                  id: existing?.id,
                                   name: nameCtrl.text.trim(),
                                   address: pickedLocation!.address,
                                   phone: phoneCtrl.fullPhone,
@@ -265,19 +286,36 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                                   availability: List.of(availability),
                                 );
                                 try {
-                                  final saved = isDoctor
-                                      ? await ApiService.addDoctor(draft)
-                                      : await ApiService.addPharmacy(draft);
+                                  final ContactEntry saved;
+                                  if (isEdit) {
+                                    saved = isDoctor
+                                        ? await ApiService.updateDoctor(
+                                            existing.id!, draft)
+                                        : await ApiService.updatePharmacy(
+                                            existing.id!, draft);
+                                  } else {
+                                    saved = isDoctor
+                                        ? await ApiService.addDoctor(draft)
+                                        : await ApiService.addPharmacy(draft);
+                                  }
                                   if (!mounted) return;
                                   setState(() {
-                                    if (isDoctor) {
-                                      _doctors.add(saved);
+                                    final list =
+                                        isDoctor ? _doctors : _pharmacies;
+                                    if (isEdit) {
+                                      final i = list.indexWhere(
+                                          (e) => e.id == saved.id);
+                                      if (i >= 0) {
+                                        list[i] = saved;
+                                      } else {
+                                        list.add(saved);
+                                      }
                                     } else {
-                                      _pharmacies.add(saved);
+                                      list.add(saved);
                                     }
                                   });
                                   Navigator.pop(ctx);
-                                  _showSuccessSnackBar(isDoctor);
+                                  _showSuccessSnackBar(isDoctor, isEdit: isEdit);
                                 } catch (e) {
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -287,9 +325,11 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
                                 }
                               },
                               child: Text(
-                                isDoctor
-                                    ? AppLocalizations.of(context).t('admin_add_doctor')
-                                    : AppLocalizations.of(context).t('admin_add_pharmacy'),
+                                isEdit
+                                    ? AppLocalizations.of(context).t('admin_save_button')
+                                    : (isDoctor
+                                        ? AppLocalizations.of(context).t('admin_add_doctor')
+                                        : AppLocalizations.of(context).t('admin_add_pharmacy')),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
@@ -312,13 +352,46 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
     );
   }
 
-  void _showSuccessSnackBar(bool isDoctor) {
+  // Build a phone controller pre-filled from a stored "+CC number" string,
+  // matching the country code back to its flag where possible.
+  PhoneInputController _phoneControllerFor(String? stored) {
+    if (stored == null || stored.trim().isEmpty) {
+      return PhoneInputController();
+    }
+    final value = stored.trim();
+    if (value.startsWith('+')) {
+      final spaceIdx = value.indexOf(' ');
+      if (spaceIdx > 0) {
+        final code = value.substring(0, spaceIdx);
+        final number = value.substring(spaceIdx + 1).trim();
+        final match = kCountries.firstWhere(
+          (c) => c['code'] == code,
+          orElse: () => const {},
+        );
+        if (match.isNotEmpty) {
+          return PhoneInputController(
+            code: code,
+            flag: match['flag']!,
+            initialNumber: number,
+          );
+        }
+        return PhoneInputController(code: code, initialNumber: number);
+      }
+    }
+    return PhoneInputController(initialNumber: value);
+  }
+
+  void _showSuccessSnackBar(bool isDoctor, {bool isEdit = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          isDoctor
-              ? AppLocalizations.of(context).t('admin_doctor_added_snack')
-              : AppLocalizations.of(context).t('admin_pharmacy_added_snack'),
+          isEdit
+              ? (isDoctor
+                  ? AppLocalizations.of(context).t('admin_updated_doctor')
+                  : AppLocalizations.of(context).t('admin_updated_pharmacy'))
+              : (isDoctor
+                  ? AppLocalizations.of(context).t('admin_doctor_added_snack')
+                  : AppLocalizations.of(context).t('admin_pharmacy_added_snack')),
           style: const TextStyle(
               color: Colors.white, fontWeight: FontWeight.w500),
         ),
@@ -471,6 +544,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
               child: _ContactCard(
                 entry: d,
                 isDoctor: true,
+                onEdit: () => _showAddDialog(isDoctor: true, existing: d),
                 onDelete: () => _deleteEntry(d, true),
               ),
             ),
@@ -486,6 +560,7 @@ class _AdminControllerScreenState extends State<AdminControllerScreen> {
               child: _ContactCard(
                 entry: p,
                 isDoctor: false,
+                onEdit: () => _showAddDialog(isDoctor: false, existing: p),
                 onDelete: () => _deleteEntry(p, false),
               ),
             ),
@@ -535,11 +610,13 @@ class _SectionLabel extends StatelessWidget {
 class _ContactCard extends StatelessWidget {
   final ContactEntry entry;
   final bool isDoctor;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _ContactCard({
     required this.entry,
     required this.isDoctor,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -593,6 +670,20 @@ class _ContactCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                    GestureDetector(
+                      onTap: onEdit,
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.edit_outlined,
+                            size: 16, color: Color(0xFF2563EB)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     GestureDetector(
                       onTap: onDelete,
                       child: Container(
@@ -764,6 +855,11 @@ class _AvailabilityEditor extends StatefulWidget {
 class _AvailabilityEditorState extends State<_AvailabilityEditor> {
   late List<AvailabilityEntry> _entries;
 
+  // Default hours applied to newly-selected days and to the "all days" bulk
+  // setter. Seeded from existing entries when editing.
+  String _bulkFrom = '09:00';
+  String _bulkTo = '17:00';
+
   static const List<String> _weekDays = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday',
     'Friday', 'Saturday', 'Sunday'
@@ -775,6 +871,10 @@ class _AvailabilityEditorState extends State<_AvailabilityEditor> {
     _entries = widget.initial
         .map((e) => AvailabilityEntry(day: e.day, from: e.from, to: e.to))
         .toList();
+    if (_entries.isNotEmpty) {
+      _bulkFrom = _entries.first.from;
+      _bulkTo = _entries.first.to;
+    }
   }
 
   void _emit() => widget.onChanged(_entries);
@@ -805,35 +905,143 @@ class _AvailabilityEditorState extends State<_AvailabilityEditor> {
         '${picked.minute.toString().padLeft(2, '0')}';
   }
 
-  void _addDay() {
-    final used = _entries.map((e) => e.day).toSet();
-    final available = _weekDays.where((d) => !used.contains(d)).toList();
-    if (available.isEmpty) return;
+  // Toggle a weekday on/off. New days inherit the current bulk hours so the
+  // "all days" setter stays consistent; kept in weekday order.
+  void _toggleDay(String day) {
+    setState(() {
+      final idx = _entries.indexWhere((e) => e.day == day);
+      if (idx >= 0) {
+        _entries.removeAt(idx);
+      } else {
+        _entries.add(AvailabilityEntry(day: day, from: _bulkFrom, to: _bulkTo));
+        _entries.sort((a, b) =>
+            _weekDays.indexOf(a.day).compareTo(_weekDays.indexOf(b.day)));
+      }
+    });
+    _emit();
+  }
 
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(AppLocalizations.of(context).t('admin_availability_choose_day')),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: available
-              .map((day) => ListTile(
-                    title: Text(day),
-                    onTap: () {
-                      setState(() {
-                        _entries.add(AvailabilityEntry(
-                            day: day, from: '09:00', to: '17:00'));
-                        _entries.sort((a, b) => _weekDays
-                            .indexOf(a.day)
-                            .compareTo(_weekDays.indexOf(b.day)));
-                      });
-                      _emit();
-                      Navigator.pop(context);
-                    },
-                  ))
-              .toList(),
+  // Apply one time to every selected day at once (per-day rows still override).
+  void _setAllFrom(String v) {
+    setState(() {
+      _bulkFrom = v;
+      for (final e in _entries) {
+        e.from = v;
+      }
+    });
+    _emit();
+  }
+
+  void _setAllTo(String v) {
+    setState(() {
+      _bulkTo = v;
+      for (final e in _entries) {
+        e.to = v;
+      }
+    });
+    _emit();
+  }
+
+  // A single selectable day pill (checkbox-style toggle).
+  Widget _dayToggleChip(String day) {
+    final selected = _entries.any((e) => e.day == day);
+    return GestureDetector(
+      onTap: () => _toggleDay(day),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.accent(context)
+              : AppColors.surfaceAlt(context),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? AppColors.accent(context)
+                : AppColors.border(context),
+          ),
         ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              size: 14,
+              color: selected ? Colors.white : AppColors.textMuted(context),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              day.substring(0, 3),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color:
+                    selected ? Colors.white : AppColors.textSecondary(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // "All days" bulk time row: sets every selected day's hours at once.
+  Widget _bulkTimeRow() {
+    final t = AppLocalizations.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.tint(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.accent(context).withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.event_repeat, size: 14, color: AppColors.accent(context)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 70,
+            child: Text(
+              t.t('admin_availability_all_days'),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: AppColors.accent(context),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _timeChip(
+                    label: t.t('admin_availability_from'),
+                    value: _bulkFrom,
+                    onTap: () async {
+                      final picked = await _pickTime(_bulkFrom);
+                      if (picked != null) _setAllFrom(picked);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text('–',
+                    style: TextStyle(color: AppColors.textMuted(context))),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _timeChip(
+                    label: t.t('admin_availability_to'),
+                    value: _bulkTo,
+                    onTap: () async {
+                      final picked = await _pickTime(_bulkTo);
+                      if (picked != null) _setAllTo(picked);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 22),
+        ],
       ),
     );
   }
@@ -844,46 +1052,32 @@ class _AvailabilityEditorState extends State<_AvailabilityEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              t.t('admin_availability_label'),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textSecondary(context),
-              ),
-            ),
-            const Spacer(),
-            GestureDetector(
-              onTap: _entries.length >= _weekDays.length ? null : _addDay,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: AppColors.tint(context),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add, size: 14, color: AppColors.accent(context)),
-                    const SizedBox(width: 4),
-                    Text(
-                      t.t('admin_availability_add_day'),
-                      style: TextStyle(
-                        color: AppColors.accent(context),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+        Text(
+          t.t('admin_availability_label'),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary(context),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          t.t('admin_availability_select_hint'),
+          style: TextStyle(
+            fontSize: 11,
+            color: AppColors.textMuted(context),
+          ),
         ),
         const SizedBox(height: 10),
+
+        // Day picker: tap to select/deselect multiple days at once.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _weekDays.map(_dayToggleChip).toList(),
+        ),
+        const SizedBox(height: 12),
+
         if (_entries.isEmpty)
           Container(
             width: double.infinity,
@@ -899,13 +1093,16 @@ class _AvailabilityEditorState extends State<_AvailabilityEditor> {
               style: TextStyle(color: AppColors.textMuted(context), fontSize: 13),
             ),
           )
-        else
-          ..._entries.asMap().entries.map((e) => _dayRow(e.key, e.value)),
+        else ...[
+          // Bulk setter first, then each day (per-day overrides the bulk value).
+          _bulkTimeRow(),
+          ..._entries.map(_dayRow),
+        ],
       ],
     );
   }
 
-  Widget _dayRow(int idx, AvailabilityEntry entry) {
+  Widget _dayRow(AvailabilityEntry entry) {
     final t = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -965,15 +1162,6 @@ class _AvailabilityEditorState extends State<_AvailabilityEditor> {
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: () {
-              setState(() => _entries.removeAt(idx));
-              _emit();
-            },
-            child: const Icon(Icons.delete_outline,
-                size: 18, color: Color(0xFF9CA3AF)),
           ),
         ],
       ),

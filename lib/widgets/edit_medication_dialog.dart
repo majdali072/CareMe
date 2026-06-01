@@ -112,34 +112,66 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
     return '$h:$min';
   }
 
-  void _addDay() {
-    final alreadyAdded = _schedule.map((e) => e.day).toSet();
-    final available = _weekDays.where((d) => !alreadyAdded.contains(d)).toList();
-    if (available.isEmpty) return;
+  // Toggle a weekday on/off in the schedule. Selecting adds an empty entry
+  // (and expands it); deselecting removes it. Kept in weekday order.
+  void _toggleDay(String day) {
+    setState(() {
+      final existingIdx = _schedule.indexWhere((e) => e.day == day);
+      if (existingIdx >= 0) {
+        _schedule.removeAt(existingIdx);
+        if (_expandedDay == existingIdx) {
+          _expandedDay = null;
+        } else if (_expandedDay != null && _expandedDay! > existingIdx) {
+          _expandedDay = _expandedDay! - 1;
+        }
+      } else {
+        _schedule.add(MedScheduleEntry(day: day, times: []));
+        _schedule.sort((a, b) =>
+            _weekDays.indexOf(a.day).compareTo(_weekDays.indexOf(b.day)));
+        _expandedDay = _schedule.indexWhere((e) => e.day == day);
+      }
+    });
+  }
 
-    showDialog(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: Text(AppLocalizations.of(context).t('dlg_med_add_day')),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: available
-                .map((day) => ListTile(
-                      title: Text(day),
-                      onTap: () {
-                        setState(() {
-                          _schedule.add(MedScheduleEntry(day: day, times: []));
-                          _expandedDay = _schedule.length - 1;
-                        });
-                        Navigator.pop(context);
-                      },
-                    ))
-                .toList(),
+  // A single selectable day pill (checkbox-style toggle).
+  Widget _dayToggleChip(String day) {
+    final selected = _schedule.any((e) => e.day == day);
+    return GestureDetector(
+      onTap: () => _toggleDay(day),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.accent(context)
+              : AppColors.surfaceAlt(context),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? AppColors.accent(context)
+                : AppColors.border(context),
           ),
-        );
-      },
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              size: 14,
+              color: selected ? Colors.white : AppColors.textMuted(context),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              day.substring(0, 3),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color:
+                    selected ? Colors.white : AppColors.textSecondary(context),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -418,34 +450,17 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                           Icon(Icons.lock_outline,
                               size: 14, color: AppColors.textMuted(context)),
                         ],
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: _addDay,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: AppColors.tint(context),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.add,
-                                    size: 14,
-                                    color: AppColors.accent(context)),
-                                const SizedBox(width: 4),
-                                Text(AppLocalizations.of(context).t('dlg_med_add_day'),
-                                    style: TextStyle(
-                                        color: AppColors.accent(context),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 10),
+
+                    // Day picker: tap to select/deselect multiple days.
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _weekDays.map(_dayToggleChip).toList(),
+                    ),
+                    const SizedBox(height: 12),
 
                     if (_schedule.isEmpty)
                       Container(
@@ -456,7 +471,7 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                           border: Border.all(color: AppColors.border(context)),
                         ),
                         child: Center(
-                          child: Text(AppLocalizations.of(context).t('dlg_med_no_days_yet'),
+                          child: Text(AppLocalizations.of(context).t('dlg_med_select_days_hint'),
                               style: TextStyle(
                                   color: AppColors.textMuted(context),
                                   fontSize: 13)),
@@ -673,17 +688,6 @@ class _EditMedicationDialogState extends State<EditMedicationDialog> {
                             fontWeight: FontWeight.bold)),
                   ),
                   const Spacer(),
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _schedule.removeAt(idx);
-                        if (_expandedDay == idx) _expandedDay = null;
-                      });
-                    },
-                    child: const Icon(Icons.delete_outline,
-                        size: 18, color: Color(0xFF9CA3AF)),
-                  ),
-                  const SizedBox(width: 4),
                   AnimatedRotation(
                     turns: isOpen ? 0.5 : 0,
                     duration: const Duration(milliseconds: 200),

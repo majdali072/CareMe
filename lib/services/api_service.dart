@@ -843,6 +843,12 @@ class ApiService {
   static Future<ContactEntry> addPharmacy(ContactEntry c) =>
       _addContact('pharmacies', c);
 
+  static Future<ContactEntry> updateDoctor(String id, ContactEntry c) =>
+      _updateContact('doctors', id, c);
+
+  static Future<ContactEntry> updatePharmacy(String id, ContactEntry c) =>
+      _updateContact('pharmacies', id, c);
+
   static Future<void> deleteDoctor(String id) =>
       _deleteContact('doctors', id);
 
@@ -874,6 +880,20 @@ class ApiService {
     }
     final data = jsonDecode(response.body);
     throw ApiException(data['error'] ?? 'Failed to add');
+  }
+
+  static Future<ContactEntry> _updateContact(
+      String path, String id, ContactEntry c) async {
+    final response = await _authenticatedRequest(() => http.put(
+          Uri.parse('$_baseUrl/$path/$id/'),
+          headers: _headers,
+          body: jsonEncode(c.toJson()),
+        ));
+    if (response.statusCode == 200) {
+      return ContactEntry.fromJson(jsonDecode(response.body));
+    }
+    final data = jsonDecode(response.body);
+    throw ApiException(data['error'] ?? 'Failed to update');
   }
 
   static Future<void> _deleteContact(String path, String id) async {

@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(flutter pub *.)"
+      "PowerShell(flutter pub *.)",
+      "Bash(printf '%s' \"test heredoc\")",
+      "Read(//tmp/**)",
+      "PowerShell($dir = \"C:/Users/twoqu/Desktop/CareMe_Code_Explained/_md/frontend\"; if \\(-not \\(Test-Path $dir\\)\\) { New-Item -ItemType Directory -Force $dir | Out-Null }; \"dir ok\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(python3 -c \"print\\('python ok'\\)\")",
+      "Bash(python -c \"print\\('python ok'\\)\")"
     ]
   }
 }

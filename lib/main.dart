@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -161,6 +162,10 @@ class _AppRootState extends State<AppRoot> {
   }
 
   Future<void> _loadData() async {
+    // Appointments live only on-device (there is no backend endpoint for them),
+    // so load them from local storage first. This is independent of the server
+    // and of Google Calendar, so appointments persist regardless of sync.
+    await _loadAppointments();
     try {
       final meds = await ApiService.getMedications();
       final labs = await ApiService.getLabTests();
@@ -176,6 +181,46 @@ class _AppRootState extends State<AppRoot> {
     } catch (e) {
       // Data will just be empty if server is unreachable
     }
+  }
+
+  // ── Local appointment persistence ─────────────────────────────────────────
+  // Appointments are stored per-user in SharedPreferences so they survive app
+  // restarts and the activity recreation that Google Sign-In can trigger.
+  String get _appointmentsKey =>
+      'appointments::${ApiService.userEmail ?? 'guest'}';
+
+  Future<void> _loadAppointments() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_appointmentsKey);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      final loaded = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(Appointment.fromJson)
+          .toList();
+      setState(() => _appointments = loaded);
+    } catch (_) {
+      // Corrupt/missing data — leave appointments empty.
+    }
+  }
+
+  Future<void> _persistAppointments() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = jsonEncode(_appointments.map((a) => a.toJson()).toList());
+      await prefs.setString(_appointmentsKey, raw);
+    } catch (_) {
+      // Best-effort; ignore storage failures.
+    }
+  }
+
+  /// Set appointments in state AND persist them. Used everywhere appointments
+  /// change (calendar screen edits, AI actions, manual add).
+  void _handleAppointmentsChanged(List<Appointment> updated) {
+    setState(() => _appointments = updated);
+    _persistAppointments();
   }
 
   void _handleLogout() {
@@ -272,6 +317,7 @@ class _AppRootState extends State<AppRoot> {
   void _saveAppointmentFromAi(Appointment apt) {
     if (!mounted) return;
     setState(() => _appointments.add(apt));
+    _persistAppointments();
   }
 
   /// Resolve a name (case-insensitive) to a medication in the user's list.
@@ -421,6 +467,7 @@ class _AppRootState extends State<AppRoot> {
     if (idx < 0) return;
     if (!mounted) return;
     setState(() => _appointments.removeAt(idx));
+    _persistAppointments();
   }
 
   void _updateAppointmentFromAi(Map<String, dynamic> fields) {
@@ -456,6 +503,7 @@ class _AppRootState extends State<AppRoot> {
 
     if (!mounted) return;
     setState(() => _appointments[idx] = updated);
+    _persistAppointments();
   }
 
   void _openAddSchedule({Map<String, String>? initialFields}) {
@@ -465,6 +513,7 @@ class _AppRootState extends State<AppRoot> {
         initialFields: initialFields,
         onAdd: (apt) {
           setState(() => _appointments.add(apt));
+          _persistAppointments();
         },
       ),
     );
@@ -549,7 +598,7 @@ class _AppRootState extends State<AppRoot> {
       case 'medications':
         return MedicationsScreen(onBack: () => _navigate('home'), medications: _medications, labTests: _labTests, onMedicationsChanged: _handleMedicationsChanged, onLabTestsChanged: _handleLabTestsChanged);
       case 'calendar':
-        return CalendarScreen(onBack: () => _navigate('home'), appointments: _appointments, onAppointmentsChanged: (a) => setState(() => _appointments = a));
+        return CalendarScreen(onBack: () => _navigate('home'), appointments: _appointments, onAppointmentsChanged: _handleAppointmentsChanged);
       case 'chatbot':
         return ChatbotScreen(
           onBack: () => _navigate('home'),
